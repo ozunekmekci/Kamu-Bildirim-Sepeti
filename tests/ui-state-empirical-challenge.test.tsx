@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import HomePage from '@/app/page';
+import HomePage from '@/components/KpssArchiveClient';
 import SearchWorkbench from '@/components/SearchWorkbench';
 import FilterSidebar from '@/components/FilterSidebar';
 import CadreTable from '@/components/CadreTable';

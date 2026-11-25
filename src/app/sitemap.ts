@@ -12,6 +12,30 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1.0,
     },
     {
+      url: `${siteUrl}/kpss-arsivi`,
+      lastModified: currentDate,
+      changeFrequency: 'weekly',
+      priority: 0.9,
+    },
+    {
+      url: `${siteUrl}/premium`,
+      lastModified: currentDate,
+      changeFrequency: 'monthly',
+      priority: 0.7,
+    },
+    {
+      url: `${siteUrl}/giris`,
+      lastModified: currentDate,
+      changeFrequency: 'monthly',
+      priority: 0.5,
+    },
+    {
+      url: `${siteUrl}/kayit`,
+      lastModified: currentDate,
+      changeFrequency: 'monthly',
+      priority: 0.6,
+    },
+    {
       url: `${siteUrl}/gizlilik-politikasi`,
       lastModified: currentDate,
       changeFrequency: 'monthly',

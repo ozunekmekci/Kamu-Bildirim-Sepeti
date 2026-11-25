@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import SeoStructuredData from '@/components/SeoStructuredData';
 import CookieBanner from '@/components/CookieBanner';
+import ThemeProvider from '@/components/ThemeProvider';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://kpssportal.pages.dev';
 
@@ -15,38 +16,27 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: 'KPSS Atama ve Nitelik Kodu Portalı | 2024–2026 Taban Puanlar',
-    template: '%s | T.C. KPSS Atama Portalı',
+    default: 'Kamu Bildirim Sepeti | Kamu Atama, Personel Alımı ve KPSS Arşivi',
+    template: '%s | Kamu Bildirim Sepeti',
   },
   description:
-    '2024-2026 KPSS B Grubu merkezi yerleştirme kadroları, lisans (KPSSP3), önlisans (KPSSP93) ve ortaöğretim (KPSSP94) taban puanları, nitelik kodu arama ve bölüm eşleştirme rehberi.',
+    'Kariyer Kapısı, İŞKUR ve Resmî Gazete kamu personel alımı, atama ve görevlendirme ilanlarını takip edin; profilinize uygun kadroları filtreleyin ve 2024-2026 KPSS taban puanlarını inceleyin.',
   keywords: [
-    'KPSS',
+    'Kamu Bildirim Sepeti',
+    'Kamu Personel Alımı',
+    'Kariyer Kapısı İlanları',
+    'İŞKUR Kamu İlanları',
+    'Resmî Gazete Personel Alımı',
     'KPSS Atama',
     'KPSS Taban Puanları',
     'Nitelik Kodu',
-    'Nitelik Kodu Arama',
-    '4001 Nitelik Kodu',
-    '3001 Nitelik Kodu',
-    '2001 Nitelik Kodu',
-    'KPSS Merkezi Atama',
-    'ÖSYM Kadro Dağılımı',
-    'Lisans KPSS',
-    'Ön Lisans KPSS',
-    'Ortaöğretim KPSS',
     'KPSSP3',
     'KPSSP93',
     'KPSSP94',
-    'KPSS Tercih Kılavuzu',
-    'Bölüm Nitelik Kodları',
-    'Memur Atamaları',
-    '2024 KPSS',
-    '2025 KPSS',
-    '2026 KPSS',
   ],
-  authors: [{ name: 'KPSS Atama Portalı Araştırma Masası' }],
-  creator: 'KPSS Atama Portalı',
-  publisher: 'T.C. Kamu Atama Rehberi',
+  authors: [{ name: 'Kamu Bildirim Sepeti' }],
+  creator: 'Kamu Bildirim Sepeti',
+  publisher: 'Kamu Bildirim Sepeti',
   formatDetection: {
     email: false,
     address: false,
@@ -56,19 +46,19 @@ export const metadata: Metadata = {
     canonical: '/',
   },
   openGraph: {
-    title: 'KPSS Atama ve Nitelik Kodu Portalı (2024 - 2026)',
+    title: 'Kamu Bildirim Sepeti | Resmî Kamu İlanları ve KPSS Atama Takibi',
     description:
-      '2024-2026 KPSS merkezi atama kadrolarını, 81 il taban ve tavan puanlarını inceleyin. Bölümünüze özel nitelik kodlarını anında keşfedin.',
+      'Kariyer Kapısı, İŞKUR ve Resmî Gazete ilanlarını tek noktadan inceleyin, profilinizle eşleştirin ve KPSS merkezi yerleştirme arşivine erişin.',
     url: siteUrl,
-    siteName: 'KPSS Atama Portalı',
+    siteName: 'Kamu Bildirim Sepeti',
     locale: 'tr_TR',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'KPSS Atama ve Nitelik Kodu Portalı (2024 - 2026)',
+    title: 'Kamu Bildirim Sepeti | Resmî Kamu İlanları ve KPSS Atama Takibi',
     description:
-      'KPSS merkezi yerleştirme kadroları, nitelik kodu arama ve taban puan analiz motoru.',
+      'Kamu atama, personel alımı ve görevlendirme ilanları ile KPSS taban puan analiz arşivi.',
   },
   robots: {
     index: true,
@@ -89,13 +79,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="tr" className="light" style={{ colorScheme: 'light' }}>
+    <html lang="tr" className="light" style={{ colorScheme: 'light' }} suppressHydrationWarning>
       <head>
         <SeoStructuredData />
       </head>
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased font-sans">
-        {children}
-        <CookieBanner />
+      <body className="min-h-screen bg-[#f8fafc] text-slate-900 dark:bg-[#0b0f14] dark:text-slate-100 antialiased font-sans">
+        <ThemeProvider>
+          {children}
+          <CookieBanner />
+        </ThemeProvider>
       </body>
     </html>
   );

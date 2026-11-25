@@ -8,7 +8,7 @@ import FilterSidebar from '@/components/FilterSidebar';
 import CadreTable from '@/components/CadreTable';
 import CadreDetailDrawer from '@/components/CadreDetailDrawer';
 import AnalyticsPanel from '@/components/AnalyticsPanel';
-import HomePage from '@/app/page';
+import HomePage from '@/components/KpssArchiveClient';
 import { PLACEMENT_RECORDS } from '@/data/records';
 import { getFilterFacets } from '@/lib/filter-engine';
 

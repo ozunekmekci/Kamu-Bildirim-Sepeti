@@ -33,8 +33,8 @@ describe('SEO Architecture & Metadata Verification', () => {
 
   it('generates valid web application manifest', () => {
     const m = manifest();
-    expect(m.name).toBe('T.C. KPSS Atama ve Nitelik Kodu Portalı');
-    expect(m.short_name).toBe('KPSS Portal');
+    expect(m.name).toBe('Kamu Bildirim Sepeti');
+    expect(m.short_name).toBe('Kamu Sepeti');
     expect(m.display).toBe('standalone');
     expect(m.theme_color).toBe('#b91c1c');
     expect(m.background_color).toBe('#f8fafc');

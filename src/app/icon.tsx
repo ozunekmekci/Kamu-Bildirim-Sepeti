@@ -11,7 +11,7 @@ export default function Icon() {
     (
       <div
         style={{
-          fontSize: 14,
+          fontSize: 12,
           background: '#b91c1c',
           width: '100%',
           height: '100%',
@@ -27,8 +27,7 @@ export default function Icon() {
           lineHeight: 1,
         }}
       >
-        <span style={{ fontSize: 9, opacity: 0.9 }}>T.C.</span>
-        <span style={{ fontSize: 11, fontWeight: 900 }}>KPSS</span>
+        <span style={{ fontSize: 11, fontWeight: 900 }}>KBS</span>
       </div>
     ),
     {

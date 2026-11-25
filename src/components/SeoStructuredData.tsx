@@ -6,10 +6,10 @@ export default function SeoStructuredData() {
   const websiteSchema = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'KPSS Atama ve Nitelik Kodu Portalı',
+    name: 'Kamu Bildirim Sepeti',
     url: siteUrl,
     description:
-      '2024-2026 KPSS B Grubu merkezi yerleştirme kadroları, lisans, önlisans ve ortaöğretim taban puanları, nitelik kodu arama ve bölüm eşleştirme portalı.',
+      'Kariyer Kapısı, İŞKUR ve Resmî Gazete kamu personel alımı, atama ve görevlendirme ilanları ile KPSS merkezi yerleştirme arşivi ve profil tabanlı eşleştirme platformu.',
     inLanguage: 'tr-TR',
     potentialAction: {
       '@type': 'SearchAction',
@@ -24,13 +24,13 @@ export default function SeoStructuredData() {
   const webAppSchema = {
     '@context': 'https://schema.org',
     '@type': 'WebApplication',
-    name: 'KPSS Merkezi Yerleştirme ve Nitelik Kodu Portalı',
+    name: 'Kamu Bildirim Sepeti',
     url: siteUrl,
-    applicationCategory: 'EducationalApplication',
+    applicationCategory: 'BusinessApplication',
     operatingSystem: 'All',
     browserRequirements: 'Requires JavaScript. Requires HTML5.',
     description:
-      'KPSS merkezi atamalarında mezun olduğunuz bölüme göre ÖSYM nitelik kodlarını ve 81 il kadro taban puanlarını analiz eden etkileşimli portal.',
+      'Kamu kurumlarının atama, personel alımı ve görevlendirme ilanlarını profilinize göre filtreleyen ve son başvuru takibi sunan SaaS platformu.',
     offers: {
       '@type': 'Offer',
       price: '0',
@@ -38,7 +38,7 @@ export default function SeoStructuredData() {
     },
     provider: {
       '@type': 'Organization',
-      name: 'Kamu Görevlerine İlk Defa Atanacaklar İçin Tercih ve Analiz Masası',
+      name: 'Kamu Bildirim Sepeti',
       url: siteUrl,
     },
   };
@@ -57,34 +57,26 @@ export default function SeoStructuredData() {
       },
       {
         '@type': 'Question',
-        name: 'KPSS 3001 nitelik kodu ne anlama gelir?',
+        name: 'Kamu Bildirim Sepeti hangi resmî kaynakları takip eder?',
         acceptedAnswer: {
           '@type': 'Answer',
-          text: '3001 nitelik kodu, "Herhangi bir önlisans programından mezun olmak" şartıdır. Meslek yüksekokulu veya 2 yıllık ön lisans bölümlerinin herhangi birinden mezun olup KPSSP93 puanı bulunan tüm adaylar 3001 kadrolarına başvurabilir.',
+          text: 'Platformda Kariyer Kapısı (kariyerkapisi.gov.tr), İŞKUR (iskur.gov.tr) ve T.C. Resmî Gazete (resmigazete.gov.tr) üzerinden yayımlanan atama, personel alımı ve görevlendirme ilanları ile ÖSYM KPSS arşivi takip edilir.',
         },
       },
       {
         '@type': 'Question',
-        name: 'KPSS 2001 nitelik kodu hangi adayları kapsar?',
+        name: 'İlanlarda hangi bilgiler bağlayıcıdır?',
         acceptedAnswer: {
           '@type': 'Answer',
-          text: '2001 nitelik kodu, "Ortaöğretim kurumlarının herhangi bir alanından mezun olmak" şartıdır. Düz lise, meslek lisesi veya imam hatip lisesi fark etmeksizin tüm lise mezunları KPSSP94 puanıyla bu kadroları yazabilir.',
+          text: 'Her ilanın güncel, eksiksiz ve bağlayıcı hâli ilgili kamu kurumunun resmî internet sitesinde yayımlanan metindir. Kamu Bildirim Sepeti üzerinde gösterilen bilgiler ile resmî kaynak arasında farklılık bulunması hâlinde resmî kaynak esas alınmalıdır.',
         },
       },
       {
         '@type': 'Question',
-        name: 'Mezun olduğum bölümün KPSS nitelik kodunu nasıl öğrenirim?',
+        name: 'KPSS 3001 ve 2001 nitelik kodları ne anlama gelir?',
         acceptedAnswer: {
           '@type': 'Answer',
-          text: 'Portalımızdaki Akıllı Arama alanına mezun olduğunuz bölümün adını (örneğin "Bilgisayar Mühendisliği" veya "Hemşirelik") yazarak ÖSYM sistemindeki 4 haneli branş nitelik kodunuzu, 4001/3001/2001 genel kodlarınızı ve eşdeğer bölümleri otomatik olarak listeleyebilirsiniz.',
-        },
-      },
-      {
-        '@type': 'Question',
-        name: 'KPSS atama taban puanları nasıl belirlenir ve ne sıklıkla güncellenir?',
-        acceptedAnswer: {
-          '@type': 'Answer',
-          text: 'Merkezi yerleştirme taban puanları, ÖSYM tarafından her yerleştirme dönemi (2024/1, 2024/2, 2025/1 vb.) sonunda kadroya yerleşen en son adayın puanı esas alınarak virgülden sonra 5 ondalık basamak hassasiyetiyle belirlenir ve portalımızda anında analiz edilir.',
+          text: '3001 herhangi bir önlisans (KPSSP93), 2001 ise herhangi bir ortaöğretim (KPSSP94) programından mezun olmayı ifade eden genel ÖSYM nitelik kodlarıdır.',
         },
       },
     ],
@@ -103,8 +95,8 @@ export default function SeoStructuredData() {
       {
         '@type': 'ListItem',
         position: 2,
-        name: 'KPSS Atama ve Nitelik Kodu Arama',
-        item: `${siteUrl}/#results-section`,
+        name: 'KPSS Merkezi Yerleştirme Arşivi',
+        item: `${siteUrl}/kpss-arsivi`,
       },
     ],
   };

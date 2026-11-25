@@ -46,7 +46,6 @@ export default function CookieBanner() {
     }
   };
 
-  // If server render or consent is already chosen, do not show
   if (consent === 'server' || consent !== null) {
     return null;
   }
@@ -55,21 +54,20 @@ export default function CookieBanner() {
     <aside
       role="region"
       aria-label="Çerez ve Gizlilik Tercihleri"
-      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t-2 border-red-700 shadow-xl p-4 sm:p-5"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-slate-900 border-t-2 border-red-700 dark:border-red-500 shadow-xl p-4 sm:p-5"
     >
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        {/* Notice Info */}
-        <div className="flex items-start gap-3 text-xs sm:text-sm text-slate-700">
-          <Cookie className="w-5 h-5 text-red-700 flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+          <Cookie className="w-5 h-5 text-red-700 dark:text-red-400 flex-shrink-0 mt-0.5" />
           <div className="leading-relaxed">
-            <span className="font-bold text-slate-900 block mb-0.5">
+            <span className="font-bold text-slate-900 dark:text-slate-100 block mb-0.5">
               Çerez ve Gizlilik Bildirimi (KVKK 6698)
             </span>
-            <p className="text-slate-600">
-              Bu sitede, arama tercihlerinizi hatırlamak ve sistem performansını analiz etmek amacıyla zorunlu ve anonim teknik çerezler kullanılmaktadır. Detaylı bilgi için{' '}
+            <p className="text-slate-600 dark:text-slate-300">
+              Kamu Bildirim Sepeti üzerinde oturum güvenliği, tema tercihi ve arama ayarlarınızı hatırlamak amacıyla zorunlu ve anonim teknik çerezler kullanılmaktadır. Detaylı bilgi için{' '}
               <Link
                 href="/gizlilik-politikasi"
-                className="text-red-700 font-semibold underline hover:text-red-800"
+                className="text-red-700 dark:text-red-400 font-semibold underline hover:text-red-800 dark:hover:text-red-300"
               >
                 Gizlilik ve Çerez Politikamızı
               </Link>{' '}
@@ -78,19 +76,18 @@ export default function CookieBanner() {
           </div>
         </div>
 
-        {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2.5 flex-shrink-0 self-end md:self-auto">
           <button
             type="button"
             onClick={handleEssentialOnly}
-            className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition-colors cursor-pointer"
+            className="min-h-[44px] px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 transition-colors cursor-pointer"
           >
             Yalnızca Zorunlu Çerezler
           </button>
           <button
             type="button"
             onClick={handleAcceptAll}
-            className="px-4 py-2 text-xs font-bold text-white bg-red-700 hover:bg-red-800 transition-colors shadow-2xs cursor-pointer"
+            className="min-h-[44px] px-4 py-2 text-xs font-bold text-white bg-red-700 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-700 transition-colors cursor-pointer"
           >
             Tümünü Kabul Et
           </button>

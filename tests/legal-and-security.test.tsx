@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
@@ -16,11 +17,21 @@ describe('Legal & Security Compliance Verification', () => {
   });
 
   describe('Gizlilik Politikası Page', () => {
-    it('renders with KVKK 6698 references and clear title', () => {
+    it('renders with KVKK 6698 references, data inventory, encryption, and delete link', () => {
       render(<GizlilikPolitikasiPage />);
       expect(screen.getByText(/Gizlilik Politikası ve Kişisel Verilerin Korunması/i)).toBeDefined();
       expect(screen.getAllByText(/6698 Sayılı KVKK/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Kamu Bildirim Sepeti/i).length).toBeGreaterThan(0);
       expect(screen.getByText(/Ana Sayfaya ve Arama Tezgahına Dön/i)).toBeDefined();
+      expect(screen.getByText(/Ad \(İsteğe bağlı\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/E-posta adresi/i)).toBeInTheDocument();
+      expect(screen.getByText(/Kullanıcı kimlikleri/i)).toBeInTheDocument();
+      expect(screen.getByText(/Telefon numarası \(İsteğe bağlı\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/Profil bilgileri/i)).toBeInTheDocument();
+      expect(screen.getByText(/Üçüncü taraflarla veri paylaşımı yok/i)).toBeInTheDocument();
+      expect(screen.getByText(/Veriler aktarım sırasında şifreleniyor/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/verilerin silinmesini talep/i).length).toBeGreaterThan(0);
+      expect(screen.getByRole('link', { name: /^Ayarlar$/i })).toHaveAttribute('href', '/ayarlar');
     });
 
     it('has appropriate SEO metadata', () => {
@@ -30,11 +41,26 @@ describe('Legal & Security Compliance Verification', () => {
   });
 
   describe('Kullanım Koşulları Page', () => {
-    it('renders with official ÖSYM disclaimer and free usage notice', () => {
+    it('renders with official sources, binding disclaimer, and free usage notice', () => {
       render(<KullanimKosullariPage />);
       expect(screen.getByText(/Kullanım Koşulları ve Sorumluluk Reddi Beyanı/i)).toBeDefined();
       expect(screen.getByText(/Resmi Hukuki Dayanak Uyarısı/i)).toBeDefined();
       expect(screen.getByText(/tamamen ücretsiz/i)).toBeDefined();
+      expect(
+        screen.getByText(/Her ilanın güncel, eksiksiz ve bağlayıcı hâli ilgili kamu kurumunun resmî internet sitesinde/i)
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /kariyerkapisi\.gov\.tr/i })).toHaveAttribute(
+        'href',
+        'https://kariyerkapisi.gov.tr'
+      );
+      expect(screen.getByRole('link', { name: /iskur\.gov\.tr/i })).toHaveAttribute(
+        'href',
+        'https://www.iskur.gov.tr/'
+      );
+      expect(screen.getByRole('link', { name: /resmigazete\.gov\.tr/i })).toHaveAttribute(
+        'href',
+        'https://www.resmigazete.gov.tr/'
+      );
     });
 
     it('has appropriate SEO metadata', () => {
@@ -128,10 +154,11 @@ describe('Legal & Security Compliance Verification', () => {
   });
 
   describe('Sitemap Coverage', () => {
-    it('includes root, gizlilik-politikasi, and kullanim-kosullari', () => {
+    it('includes root, kpss-arsivi, gizlilik-politikasi, and kullanim-kosullari', () => {
       const items = sitemap();
       const urls = items.map((i) => i.url);
       expect(urls.some((u) => u.endsWith('/'))).toBe(true);
+      expect(urls.some((u) => u.endsWith('/kpss-arsivi'))).toBe(true);
       expect(urls.some((u) => u.endsWith('/gizlilik-politikasi'))).toBe(true);
       expect(urls.some((u) => u.endsWith('/kullanim-kosullari'))).toBe(true);
     });

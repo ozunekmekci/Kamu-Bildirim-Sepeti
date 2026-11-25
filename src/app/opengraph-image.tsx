@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const alt = 'T.C. KPSS Atama ve Nitelik Kodu Portalı (2024 - 2026)';
+export const alt = 'Kamu Bildirim Sepeti: Resmî Kamu İlanları ve KPSS Atama Takibi';
 export const size = {
   width: 1200,
   height: 630,
@@ -29,7 +29,7 @@ export default function Image() {
             style={{
               width: '80px',
               height: '80px',
-              borderRadius: '40px',
+              borderRadius: '8px',
               background: '#b91c1c',
               display: 'flex',
               flexDirection: 'column',
@@ -39,23 +39,22 @@ export default function Image() {
               fontWeight: 900,
             }}
           >
-            <span style={{ fontSize: '18px' }}>T.C.</span>
-            <span style={{ fontSize: '22px' }}>KPSS</span>
+            <span style={{ fontSize: '26px', letterSpacing: '-0.5px' }}>KBS</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span
               style={{
-                fontSize: '18px',
-                fontWeight: 700,
+                fontSize: '20px',
+                fontWeight: 800,
                 color: '#b91c1c',
                 textTransform: 'uppercase',
                 letterSpacing: '1px',
               }}
             >
-              Türkiye Cumhuriyeti Kamu Görevleri Merkezi Yerleştirme Portalı
+              Kamu Bildirim Sepeti
             </span>
-            <span style={{ fontSize: '14px', color: '#64748b' }}>
-              Resmî ÖSYM Verileri ile 2024–2026 Tercih ve Analiz Rehberi
+            <span style={{ fontSize: '15px', color: '#475569' }}>
+              Kariyer Kapısı, İŞKUR, Resmî Gazete İlan Akışı ve ÖSYM KPSS Arşivi
             </span>
           </div>
         </div>
@@ -64,24 +63,24 @@ export default function Image() {
         <div style={{ display: 'flex', flexDirection: 'column', margin: '30px 0' }}>
           <h1
             style={{
-              fontSize: '48px',
+              fontSize: '46px',
               fontWeight: 900,
               color: '#0f172a',
               lineHeight: 1.15,
               margin: '0 0 16px 0',
             }}
           >
-            KPSS Atama, Taban Puan ve Nitelik Kodu Arama Portalı
+            Kamu Atama, Personel Alımı ve Görevlendirme İlanları Tek Yerde
           </h1>
           <p
             style={{
-              fontSize: '24px',
+              fontSize: '22px',
               color: '#334155',
               lineHeight: 1.4,
               margin: 0,
             }}
           >
-            Bölümünüzü seçerek ÖSYM nitelik kodlarını (4001, 3001, 2001) otomatik eşleştirin; 81 ilin merkezi atama kadrolarını ve taban puanlarını inceleyin.
+            Profilinize uyan resmî ilanları filtreleyin, son başvuru tarihlerini kaydedin ve 2024-2026 KPSS taban puanlarını inceleyin.
           </p>
         </div>
 
@@ -90,7 +89,7 @@ export default function Image() {
           <div
             style={{
               background: 'white',
-              border: '2px solid #e2e8f0',
+              border: '2px solid #cbd5e1',
               padding: '12px 20px',
               fontSize: '18px',
               fontWeight: 700,
@@ -98,12 +97,12 @@ export default function Image() {
               display: 'flex',
             }}
           >
-            Lisans (KPSSP3)
+            Kariyer Kapısı
           </div>
           <div
             style={{
               background: 'white',
-              border: '2px solid #e2e8f0',
+              border: '2px solid #cbd5e1',
               padding: '12px 20px',
               fontSize: '18px',
               fontWeight: 700,
@@ -111,12 +110,12 @@ export default function Image() {
               display: 'flex',
             }}
           >
-            Ön Lisans (KPSSP93)
+            İŞKUR
           </div>
           <div
             style={{
               background: 'white',
-              border: '2px solid #e2e8f0',
+              border: '2px solid #cbd5e1',
               padding: '12px 20px',
               fontSize: '18px',
               fontWeight: 700,
@@ -124,7 +123,7 @@ export default function Image() {
               display: 'flex',
             }}
           >
-            Ortaöğretim (KPSSP94)
+            Resmî Gazete
           </div>
           <div
             style={{
@@ -137,7 +136,7 @@ export default function Image() {
               display: 'flex',
             }}
           >
-            2024/1 • 2024/2 • 2025/1
+            KPSS Arşivi (P3 / P93 / P94)
           </div>
         </div>
       </div>

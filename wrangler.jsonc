@@ -18,5 +18,18 @@
       "binding": "WORKER_SELF_REFERENCE",
       "service": "kpssportal"
     }
-  ]
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kamu_bildirim_sepeti",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "0 */6 * * *"
+    ]
+  }
 }
