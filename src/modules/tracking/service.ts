@@ -1,3 +1,4 @@
+import type { Announcement } from '@/modules/announcements/types';
 import { getDeadlineDaysLeft } from '@/modules/announcements';
 import {
   canSaveAnotherAnnouncement,
@@ -11,6 +12,23 @@ import type {
 } from '@/modules/db/types';
 import { generateId } from '@/modules/identity/crypto';
 import { evaluateAnnouncementMatch } from '@/modules/matching';
+import {
+  type EmailAdapter,
+  NoopEmailAdapter,
+} from './email-adapters';
+
+export {
+  type EmailAdapter,
+  type EmailMessage,
+  type EmailSendResult,
+  InMemoryEmailAdapter,
+  MailChannelsEmailAdapter,
+  type MailChannelsEmailAdapterOptions,
+  NoopEmailAdapter,
+  ResendEmailAdapter,
+  type ResendEmailAdapterOptions,
+  createEmailAdapter,
+} from './email-adapters';
 
 export class TrackingError extends Error {
   constructor(
@@ -21,36 +39,6 @@ export class TrackingError extends Error {
   ) {
     super(message);
     this.name = 'TrackingError';
-  }
-}
-
-export interface EmailMessage {
-  to: string;
-  subject: string;
-  text: string;
-}
-
-export interface EmailAdapter {
-  readonly providerName: string;
-  sendEmail(message: EmailMessage): Promise<{ delivered: boolean; provider: string }>;
-}
-
-export class NoopEmailAdapter implements EmailAdapter {
-  readonly providerName = 'noop';
-
-  async sendEmail(_message: EmailMessage): Promise<{ delivered: boolean; provider: string }> {
-    void _message;
-    return { delivered: false, provider: this.providerName };
-  }
-}
-
-export class InMemoryEmailAdapter implements EmailAdapter {
-  readonly providerName = 'memory';
-  readonly sent: EmailMessage[] = [];
-
-  async sendEmail(message: EmailMessage): Promise<{ delivered: boolean; provider: string }> {
-    this.sent.push(message);
-    return { delivered: true, provider: this.providerName };
   }
 }
 
@@ -223,6 +211,67 @@ export async function dispatchPendingReminders(
         to: user.email,
         subject: `Kamu Bildirim Sepeti: ${announcement.title} son başvuru hatırlatması`,
         text: `${announcement.institution} tarafından yayımlanan "${announcement.title}" ilanı için son başvuru tarihine ${daysLeft} gün kaldı. Resmî kaynak: ${announcement.sourceUrl}`,
+      });
+
+      if (result.delivered || emailAdapter.providerName === 'noop') {
+        await db.recordReminderLog({
+          id: generateId(),
+          userId: user.id,
+          announcementId: announcement.id,
+          reminderType,
+          sentAt: referenceDate.toISOString(),
+        });
+        sentCount += 1;
+      }
+    }
+  }
+
+  return { processedUsers, sentCount };
+}
+
+export async function dispatchNewAnnouncementAlerts(
+  db: DatabaseAdapter,
+  newAnnouncements: Announcement[],
+  emailAdapter: EmailAdapter = new NoopEmailAdapter(),
+  referenceDate = new Date(),
+): Promise<{ processedUsers: number; sentCount: number }> {
+  const usersWithPrefs = await db.listUsersWithNotificationPrefs();
+  let processedUsers = 0;
+  let sentCount = 0;
+
+  if (newAnnouncements.length === 0) {
+    return { processedUsers: usersWithPrefs.length, sentCount: 0 };
+  }
+
+  for (const { user, prefs } of usersWithPrefs) {
+    processedUsers += 1;
+    if (!prefs.emailEnabled || !prefs.instantNewAnnouncements) {
+      continue;
+    }
+
+    const { entitlements } = await getUserBillingState(db, user.id);
+    if (!entitlements.canInstantAlert) {
+      continue;
+    }
+
+    const profile = prefs.onlyMatchingProfile ? await db.getProfile(user.id) : null;
+
+    for (const announcement of newAnnouncements) {
+      if (announcement.status !== 'acik') continue;
+
+      if (prefs.onlyMatchingProfile && profile) {
+        const match = evaluateAnnouncementMatch(profile, announcement);
+        if (!match.eligible) continue;
+      }
+
+      const reminderType = 'new_announcement';
+      const alreadySent = await db.hasReminderLog(user.id, announcement.id, reminderType);
+      if (alreadySent) continue;
+
+      const result = await emailAdapter.sendEmail({
+        to: user.email,
+        subject: `Kamu Bildirim Sepeti: Yeni ilan - ${announcement.title}`,
+        text: `${announcement.institution} tarafından "${announcement.title}" ilanı yayımlandı. Son başvuru tarihi: ${announcement.deadlineAt}. Resmî kaynak: ${announcement.sourceUrl}`,
       });
 
       if (result.delivered || emailAdapter.providerName === 'noop') {

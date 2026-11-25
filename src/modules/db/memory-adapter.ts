@@ -1,6 +1,8 @@
 import { INITIAL_ANNOUNCEMENTS, filterAnnouncements } from '@/modules/announcements';
 import type { Announcement, AnnouncementFilter } from '@/modules/announcements/types';
 import type {
+  AuthToken,
+  AuthTokenPurpose,
   CreateUserInput,
   DatabaseAdapter,
   NotificationPreferences,
@@ -10,6 +12,7 @@ import type {
   Session,
   StoredUser,
   Subscription,
+  SyncRun,
   UpsertAnnouncementsResult,
   UserProfile,
 } from './types';
@@ -34,12 +37,14 @@ export class MemoryDbAdapter implements DatabaseAdapter {
   private users = new Map<string, StoredUser>();
   private userIdByEmail = new Map<string, string>();
   private sessions = new Map<string, Session>();
+  private authTokens = new Map<string, AuthToken>();
   private profiles = new Map<string, UserProfile>();
   private announcements = new Map<string, Announcement>();
   private saved = new Map<string, SavedAnnouncementRecord>();
   private notificationPrefs = new Map<string, NotificationPreferences>();
   private reminderLogs = new Map<string, ReminderLog>();
   private subscriptions = new Map<string, Subscription>();
+  private syncRuns = new Map<string, SyncRun>();
 
   constructor(seedAnnouncements: Announcement[] = INITIAL_ANNOUNCEMENTS) {
     for (const item of seedAnnouncements) {
@@ -51,12 +56,14 @@ export class MemoryDbAdapter implements DatabaseAdapter {
     this.users.clear();
     this.userIdByEmail.clear();
     this.sessions.clear();
+    this.authTokens.clear();
     this.profiles.clear();
     this.announcements.clear();
     this.saved.clear();
     this.notificationPrefs.clear();
     this.reminderLogs.clear();
     this.subscriptions.clear();
+    this.syncRuns.clear();
     for (const item of seedAnnouncements) {
       this.announcements.set(item.id, cloneAnnouncement(item));
     }
@@ -73,6 +80,7 @@ export class MemoryDbAdapter implements DatabaseAdapter {
       passwordHash: input.passwordHash,
       fullName: input.fullName ?? null,
       phone: input.phone ?? null,
+      emailVerifiedAt: null,
       acceptedTermsAt: input.acceptedTermsAt,
       acceptedPrivacyAt: input.acceptedPrivacyAt,
       createdAt: input.now,
@@ -111,6 +119,34 @@ export class MemoryDbAdapter implements DatabaseAdapter {
     return { ...updated };
   }
 
+  async markEmailVerified(userId: string, verifiedAt: string): Promise<StoredUser | null> {
+    const existing = this.users.get(userId);
+    if (!existing) return null;
+    const updated: StoredUser = {
+      ...existing,
+      emailVerifiedAt: verifiedAt,
+      updatedAt: verifiedAt,
+    };
+    this.users.set(userId, updated);
+    return { ...updated };
+  }
+
+  async updateUserPassword(
+    userId: string,
+    passwordHash: string,
+    now: string,
+  ): Promise<StoredUser | null> {
+    const existing = this.users.get(userId);
+    if (!existing) return null;
+    const updated: StoredUser = {
+      ...existing,
+      passwordHash,
+      updatedAt: now,
+    };
+    this.users.set(userId, updated);
+    return { ...updated };
+  }
+
   async deleteUser(userId: string): Promise<boolean> {
     const existing = this.users.get(userId);
     if (!existing) return false;
@@ -121,6 +157,12 @@ export class MemoryDbAdapter implements DatabaseAdapter {
     for (const [tokenHash, session] of this.sessions.entries()) {
       if (session.userId === userId) {
         this.sessions.delete(tokenHash);
+      }
+    }
+
+    for (const [tokenId, token] of this.authTokens.entries()) {
+      if (token.userId === userId) {
+        this.authTokens.delete(tokenId);
       }
     }
 
@@ -165,6 +207,30 @@ export class MemoryDbAdapter implements DatabaseAdapter {
         this.sessions.delete(tokenHash);
       }
     }
+  }
+
+  async createAuthToken(token: AuthToken): Promise<AuthToken> {
+    const copy = { ...token };
+    this.authTokens.set(copy.id, copy);
+    return { ...copy };
+  }
+
+  async findAuthTokenByHash(
+    tokenHash: string,
+    purpose: AuthTokenPurpose,
+  ): Promise<AuthToken | null> {
+    for (const token of this.authTokens.values()) {
+      if (token.tokenHash === tokenHash && token.purpose === purpose) {
+        return { ...token };
+      }
+    }
+    return null;
+  }
+
+  async markAuthTokenUsed(id: string, usedAt: string): Promise<void> {
+    const existing = this.authTokens.get(id);
+    if (!existing) return;
+    this.authTokens.set(id, { ...existing, usedAt });
   }
 
   async getProfile(userId: string): Promise<UserProfile | null> {
@@ -333,8 +399,25 @@ export class MemoryDbAdapter implements DatabaseAdapter {
   }
 
   async upsertSubscription(subscription: Subscription): Promise<Subscription> {
-    const copy = { ...subscription };
+    const copy: Subscription = {
+      ...subscription,
+      externalSubscriptionId: subscription.externalSubscriptionId ?? null,
+    };
     this.subscriptions.set(copy.userId, copy);
     return { ...copy };
+  }
+
+  async recordSyncRun(run: SyncRun): Promise<SyncRun> {
+    const copy = { ...run };
+    this.syncRuns.set(copy.id, copy);
+    return { ...copy };
+  }
+
+  async listSyncRuns(limit = 10): Promise<SyncRun[]> {
+    const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    return Array.from(this.syncRuns.values())
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+      .slice(0, safeLimit)
+      .map((run) => ({ ...run }));
   }
 }

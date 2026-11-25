@@ -13,9 +13,29 @@ import {
   ShieldCheck,
   Sun,
   Moon,
+  MailCheck,
+  RefreshCw,
 } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import { useTheme } from '@/components/ThemeProvider';
+
+interface SyncRunSummary {
+  id: string;
+  triggeredBy: string;
+  startedAt: string;
+  finishedAt: string;
+  status: string;
+  syncedCount: number;
+  remindersSent: number;
+  newAlertsSent: number;
+}
+
+function formatSyncStatusLabel(status: string): string {
+  if (status === 'success') return 'Başarılı';
+  if (status === 'partial') return 'Kısmi Başarı';
+  if (status === 'error') return 'Hata';
+  return status;
+}
 
 export default function AyarlarPage() {
   const router = useRouter();
@@ -27,6 +47,15 @@ export default function AyarlarPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [savingPrefs, setSavingPrefs] = useState(false);
+
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [emailVerifiedAt, setEmailVerifiedAt] = useState<string | null>(null);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [verificationMsg, setVerificationMsg] = useState<string | null>(null);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [verificationPreviewToken, setVerificationPreviewToken] = useState<string | null>(null);
+
+  const [lastSyncRun, setLastSyncRun] = useState<SyncRunSummary | null>(null);
 
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [instantNewAnnouncements, setInstantNewAnnouncements] = useState(false);
@@ -43,8 +72,10 @@ export default function AyarlarPage() {
     Promise.all([
       fetch('/api/notifications/preferences', { cache: 'no-store' }),
       fetch('/api/billing', { cache: 'no-store' }),
+      fetch('/api/auth/me', { cache: 'no-store' }),
+      fetch('/api/sync/status', { cache: 'no-store' }),
     ])
-      .then(async ([prefsRes, billingRes]) => {
+      .then(async ([prefsRes, billingRes, meRes, syncRes]) => {
         if (!active) return;
         if (prefsRes.status === 401) {
           setAuthRequired(true);
@@ -78,6 +109,21 @@ export default function AyarlarPage() {
             setPlan(bData.entitlements.plan);
           }
         }
+        if (meRes.ok) {
+          const meData = (await meRes.json()) as {
+            user?: { email?: string; emailVerifiedAt?: string | null } | null;
+          };
+          if (meData.user) {
+            setUserEmail(meData.user.email ?? null);
+            setEmailVerifiedAt(meData.user.emailVerifiedAt ?? null);
+          }
+        }
+        if (syncRes.ok) {
+          const syncData = (await syncRes.json()) as {
+            lastRun?: SyncRunSummary | null;
+          };
+          setLastSyncRun(syncData.lastRun ?? null);
+        }
       })
       .catch(() => {
         if (active) setError('Sunucuya bağlanılamadı.');
@@ -89,6 +135,40 @@ export default function AyarlarPage() {
       active = false;
     };
   }, []);
+
+  const handleResendVerification = async () => {
+    setVerificationError(null);
+    setVerificationMsg(null);
+    setVerificationPreviewToken(null);
+    setSendingVerification(true);
+    try {
+      const res = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+      });
+      const data = (await res.json()) as {
+        sent?: boolean;
+        alreadyVerified?: boolean;
+        previewToken?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        setVerificationError(data.error || 'Doğrulama bağlantısı gönderilemedi.');
+        return;
+      }
+      if (data.alreadyVerified) {
+        setVerificationMsg('E-posta adresiniz zaten doğrulanmış.');
+        return;
+      }
+      setVerificationMsg('Doğrulama bağlantısı e-posta adresinize gönderildi.');
+      if (data.previewToken) {
+        setVerificationPreviewToken(data.previewToken);
+      }
+    } catch {
+      setVerificationError('Sunucuya bağlanılamadı.');
+    } finally {
+      setSendingVerification(false);
+    }
+  };
 
   const handleSavePrefs = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,7 +309,7 @@ export default function AyarlarPage() {
             <div className="flex flex-wrap justify-center gap-2.5 pt-2">
               <Link
                 href="/giris"
-                className="min-h-[44px] px-4 py-2 bg-[#b91c1c] dark:bg-[#dc2626] text-white text-xs font-bold inline-flex items-center"
+                className="min-h-[44px] px-4 py-2 bg-[#b91c1c] hover:bg-[#991b1b] dark:bg-[#dc2626] dark:hover:bg-[#b91c1c] text-white text-xs font-bold inline-flex items-center"
               >
                 Giriş Yap
               </Link>
@@ -245,6 +325,87 @@ export default function AyarlarPage() {
 
         {!loading && !authRequired && (
           <>
+            {/* Email Verification Status */}
+            <section className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-6 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <MailCheck className="w-4 h-4 text-[#b91c1c] dark:text-[#ef4444]" aria-hidden="true" />
+                  <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    E-posta Doğrulama Durumu
+                  </h2>
+                </div>
+                <span
+                  className={`text-xs font-bold px-2.5 py-0.5 border tabular-nums ${
+                    emailVerifiedAt
+                      ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200'
+                      : 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
+                  }`}
+                >
+                  {emailVerifiedAt ? 'Doğrulandı' : 'Doğrulanmadı'}
+                </span>
+              </div>
+
+              <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  {userEmail && (
+                    <p className="font-semibold text-slate-900 dark:text-slate-100">{userEmail}</p>
+                  )}
+                  {emailVerifiedAt ? (
+                    <p className="text-xs text-slate-600 dark:text-slate-400 tabular-nums">
+                      Doğrulama tarihi: {new Date(emailVerifiedAt).toLocaleString('tr-TR')}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      Bildirimlerin kesintisiz ulaşması için e-posta adresinizi doğrulamanız önerilir.
+                    </p>
+                  )}
+                </div>
+
+                {!emailVerifiedAt && (
+                  <button
+                    type="button"
+                    disabled={sendingVerification}
+                    onClick={handleResendVerification}
+                    className="min-h-[44px] px-4 py-2 bg-[#b91c1c] hover:bg-[#991b1b] dark:bg-[#dc2626] dark:hover:bg-[#b91c1c] disabled:opacity-60 text-white text-xs sm:text-sm font-bold cursor-pointer transition-colors"
+                  >
+                    {sendingVerification ? 'Gönderiliyor...' : 'Doğrulama Bağlantısı Gönder'}
+                  </button>
+                )}
+              </div>
+
+              {verificationError && (
+                <div
+                  role="alert"
+                  className="p-3 border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-xs text-red-900 dark:text-red-200 flex items-center gap-2"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>{verificationError}</span>
+                </div>
+              )}
+
+              {verificationMsg && (
+                <div
+                  role="status"
+                  className="p-3 border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-xs text-emerald-900 dark:text-emerald-200 space-y-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    <span>{verificationMsg}</span>
+                  </div>
+                  {verificationPreviewToken && (
+                    <div>
+                      <Link
+                        href={`/eposta-dogrula?token=${encodeURIComponent(verificationPreviewToken)}`}
+                        className="min-h-[44px] px-3 py-1.5 inline-flex items-center border border-emerald-700 dark:border-emerald-500 font-bold text-emerald-900 dark:text-emerald-100 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
+                      >
+                        Geliştirme Test Bağlantısı
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+
             {/* Notification Preferences */}
             <section className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-6 space-y-4">
               <div className="flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
@@ -345,7 +506,7 @@ export default function AyarlarPage() {
                     max={30}
                     value={reminderDaysBefore}
                     onChange={(e) => setReminderDaysBefore(Number(e.target.value))}
-                    className="w-full min-h-[44px] px-3 py-2 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 tabular-nums"
+                    className="w-full min-h-[44px] px-3 py-2 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 tabular-nums"
                   />
                 </div>
 
@@ -359,6 +520,50 @@ export default function AyarlarPage() {
                   </button>
                 </div>
               </form>
+            </section>
+
+            {/* Official Source Sync Status */}
+            <section className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-6 space-y-3">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 text-[#b91c1c] dark:text-[#ef4444]" aria-hidden="true" />
+                  <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    Resmî Kaynak Senkronizasyon Durumu
+                  </h2>
+                </div>
+                {lastSyncRun && (
+                  <span className="text-xs font-bold px-2.5 py-0.5 border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+                    {formatSyncStatusLabel(lastSyncRun.status)}
+                  </span>
+                )}
+              </div>
+
+              {!lastSyncRun ? (
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+                  Henüz canlı senkronizasyon çalıştırılmadı.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs tabular-nums">
+                  <div className="border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3">
+                    <div className="text-slate-600 dark:text-slate-400">Son Çalıştırma</div>
+                    <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+                      {new Date(lastSyncRun.finishedAt || lastSyncRun.startedAt).toLocaleString('tr-TR')}
+                    </div>
+                  </div>
+                  <div className="border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3">
+                    <div className="text-slate-600 dark:text-slate-400">Senkronize Edilen İlan</div>
+                    <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+                      {lastSyncRun.syncedCount} ilan
+                    </div>
+                  </div>
+                  <div className="border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3">
+                    <div className="text-slate-600 dark:text-slate-400">Durum / Hatırlatıcı</div>
+                    <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+                      {formatSyncStatusLabel(lastSyncRun.status)} ({lastSyncRun.remindersSent + lastSyncRun.newAlertsSent} bildirim)
+                    </div>
+                  </div>
+                </div>
+              )}
             </section>
 
             {/* KVKK & Account Deletion */}
@@ -403,7 +608,7 @@ export default function AyarlarPage() {
                     value={confirmText}
                     onChange={(e) => setConfirmText(e.target.value)}
                     placeholder="SIL"
-                    className="w-full min-h-[44px] px-3 py-2 text-sm border border-red-300 dark:border-red-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                    className="w-full min-h-[44px] px-3 py-2 text-sm border border-red-300 dark:border-red-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400"
                   />
                 </div>
 

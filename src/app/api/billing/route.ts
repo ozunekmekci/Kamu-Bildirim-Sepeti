@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getUserBillingState } from '@/modules/billing';
+import { getPaymentProviderStatus, getUserBillingState } from '@/modules/billing';
 import { getDb } from '@/modules/db';
 import { getAuthenticatedUser, getSessionTokenFromRequest } from '@/modules/identity';
 
@@ -16,5 +16,12 @@ export async function GET(request: Request) {
   }
 
   const billing = await getUserBillingState(db, user.id);
-  return NextResponse.json(billing, { status: 200 });
+  const providerStatus = getPaymentProviderStatus();
+  return NextResponse.json(
+    {
+      ...billing,
+      ...providerStatus,
+    },
+    { status: 200 },
+  );
 }

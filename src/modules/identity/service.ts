@@ -1,5 +1,6 @@
 import type { MilitaryStatus } from '@/modules/announcements/types';
 import type {
+  AuthTokenPurpose,
   DatabaseAdapter,
   EducationLevel,
   KpssScoreType,
@@ -18,6 +19,24 @@ import {
 
 export const SESSION_COOKIE_NAME = 'kbs_session';
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
+export const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
+export const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
+
+export interface AuthEmailSender {
+  readonly providerName: string;
+  sendEmail(message: {
+    to: string;
+    subject: string;
+    text: string;
+  }): Promise<{ delivered: boolean; provider: string }>;
+}
+
+const noopAuthEmailSender: AuthEmailSender = {
+  providerName: 'noop',
+  async sendEmail() {
+    return { delivered: false, provider: 'noop' };
+  },
+};
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const VALID_EDUCATION_LEVELS: ReadonlySet<EducationLevel> = new Set([
@@ -429,4 +448,209 @@ export async function deleteUserAccount(
     );
   }
   return db.deleteUser(userId);
+}
+
+export async function issueAuthToken(
+  db: DatabaseAdapter,
+  userId: string,
+  purpose: AuthTokenPurpose,
+  ttlMs: number,
+): Promise<{ rawToken: string; expiresAt: string }> {
+  const rawToken = generateId();
+  const nowMs = Date.now();
+  const createdAt = new Date(nowMs).toISOString();
+  const expiresAt = new Date(nowMs + ttlMs).toISOString();
+  const tokenHash = await hashToken(rawToken);
+
+  await db.createAuthToken({
+    id: generateId(),
+    userId,
+    purpose,
+    tokenHash,
+    expiresAt,
+    usedAt: null,
+    createdAt,
+  });
+
+  return { rawToken, expiresAt };
+}
+
+function buildActionUrl(baseUrl: string | undefined, path: string, token: string): string | null {
+  if (!baseUrl) return null;
+  const trimmed = baseUrl.replace(/\/+$/, '');
+  return `${trimmed}${path}?token=${encodeURIComponent(token)}`;
+}
+
+function shouldExposePreviewToken(provider: string): boolean {
+  return process.env.NODE_ENV !== 'production' && provider === 'noop';
+}
+
+export async function requestEmailVerification(
+  db: DatabaseAdapter,
+  userId: string,
+  emailAdapter: AuthEmailSender = noopAuthEmailSender,
+  baseUrl?: string,
+): Promise<{
+  sent: boolean;
+  alreadyVerified: boolean;
+  provider: string;
+  previewToken?: string;
+}> {
+  const user = await db.findUserById(userId);
+  if (!user) {
+    throw new IdentityError('USER_NOT_FOUND', 404, 'Kullanıcı bulunamadı.');
+  }
+
+  if (user.emailVerifiedAt) {
+    return {
+      sent: false,
+      alreadyVerified: true,
+      provider: emailAdapter.providerName,
+    };
+  }
+
+  const { rawToken } = await issueAuthToken(db, user.id, 'email_verify', EMAIL_VERIFY_TTL_MS);
+  const verifyUrl = buildActionUrl(baseUrl, '/eposta-dogrula', rawToken);
+  const textLines = [
+    'Kamu Bildirim Sepeti hesabınızın e-posta adresini doğrulamak için aşağıdaki kodu kullanabilirsiniz:',
+    `Doğrulama Kodu: ${rawToken}`,
+  ];
+  if (verifyUrl) {
+    textLines.push(`Doğrulama Bağlantısı: ${verifyUrl}`);
+  }
+  textLines.push('Bu bağlantı 24 saat geçerlidir.');
+
+  const result = await emailAdapter.sendEmail({
+    to: user.email,
+    subject: 'Kamu Bildirim Sepeti: E-posta Doğrulama',
+    text: textLines.join('\n'),
+  });
+
+  return {
+    sent: result.delivered,
+    alreadyVerified: false,
+    provider: result.provider,
+    ...(shouldExposePreviewToken(result.provider) ? { previewToken: rawToken } : {}),
+  };
+}
+
+export async function verifyEmailWithToken(
+  db: DatabaseAdapter,
+  rawToken: string,
+): Promise<{ verified: true; emailVerifiedAt: string; user: User }> {
+  const trimmed = typeof rawToken === 'string' ? rawToken.trim() : '';
+  if (!trimmed) {
+    throw new IdentityError(
+      'INVALID_OR_EXPIRED_TOKEN',
+      400,
+      'Doğrulama kodu geçersiz veya süresi dolmuş.',
+    );
+  }
+
+  const tokenHash = await hashToken(trimmed);
+  const token = await db.findAuthTokenByHash(tokenHash, 'email_verify');
+  if (!token || token.usedAt !== null || new Date(token.expiresAt).getTime() <= Date.now()) {
+    throw new IdentityError(
+      'INVALID_OR_EXPIRED_TOKEN',
+      400,
+      'Doğrulama kodu geçersiz veya süresi dolmuş.',
+    );
+  }
+
+  const now = new Date().toISOString();
+  const updatedUser = await db.markEmailVerified(token.userId, now);
+  if (!updatedUser) {
+    throw new IdentityError('USER_NOT_FOUND', 404, 'Kullanıcı bulunamadı.');
+  }
+
+  await db.markAuthTokenUsed(token.id, now);
+  return {
+    verified: true,
+    emailVerifiedAt: updatedUser.emailVerifiedAt ?? now,
+    user: sanitizeUser(updatedUser),
+  };
+}
+
+export async function requestPasswordReset(
+  db: DatabaseAdapter,
+  email: string,
+  emailAdapter: AuthEmailSender = noopAuthEmailSender,
+  baseUrl?: string,
+): Promise<{ accepted: true; previewToken?: string }> {
+  const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  if (!EMAIL_PATTERN.test(normalizedEmail)) {
+    throw new IdentityError('INVALID_EMAIL', 400, 'Geçerli bir e-posta adresi girin.');
+  }
+
+  const user = await db.findUserByEmail(normalizedEmail);
+  if (!user) {
+    return { accepted: true };
+  }
+
+  const { rawToken } = await issueAuthToken(
+    db,
+    user.id,
+    'password_reset',
+    PASSWORD_RESET_TTL_MS,
+  );
+  const resetUrl = buildActionUrl(baseUrl, '/sifre-sifirla', rawToken);
+  const textLines = [
+    'Kamu Bildirim Sepeti hesabınız için parola sıfırlama talebi alındı.',
+    `Sıfırlama Kodu: ${rawToken}`,
+  ];
+  if (resetUrl) {
+    textLines.push(`Sıfırlama Bağlantısı: ${resetUrl}`);
+  }
+  textLines.push('Bu kod 1 saat geçerlidir. Talebi siz oluşturmadıysanız bu e-postayı yok sayabilirsiniz.');
+
+  const result = await emailAdapter.sendEmail({
+    to: user.email,
+    subject: 'Kamu Bildirim Sepeti: Parola Sıfırlama',
+    text: textLines.join('\n'),
+  });
+
+  return {
+    accepted: true,
+    ...(shouldExposePreviewToken(result.provider) ? { previewToken: rawToken } : {}),
+  };
+}
+
+export async function resetPasswordWithToken(
+  db: DatabaseAdapter,
+  rawToken: string,
+  newPassword: string,
+): Promise<{ reset: true }> {
+  if (typeof newPassword !== 'string' || newPassword.length < 8) {
+    throw new IdentityError('WEAK_PASSWORD', 400, 'Parola en az 8 karakter olmalıdır.');
+  }
+
+  const trimmed = typeof rawToken === 'string' ? rawToken.trim() : '';
+  if (!trimmed) {
+    throw new IdentityError(
+      'INVALID_OR_EXPIRED_TOKEN',
+      400,
+      'Parola sıfırlama kodu geçersiz veya süresi dolmuş.',
+    );
+  }
+
+  const tokenHash = await hashToken(trimmed);
+  const token = await db.findAuthTokenByHash(tokenHash, 'password_reset');
+  if (!token || token.usedAt !== null || new Date(token.expiresAt).getTime() <= Date.now()) {
+    throw new IdentityError(
+      'INVALID_OR_EXPIRED_TOKEN',
+      400,
+      'Parola sıfırlama kodu geçersiz veya süresi dolmuş.',
+    );
+  }
+
+  const now = new Date().toISOString();
+  const passwordHash = await hashPassword(newPassword);
+  const updatedUser = await db.updateUserPassword(token.userId, passwordHash, now);
+  if (!updatedUser) {
+    throw new IdentityError('USER_NOT_FOUND', 404, 'Kullanıcı bulunamadı.');
+  }
+
+  await db.markAuthTokenUsed(token.id, now);
+  await db.deleteSessionsByUserId(token.userId);
+  return { reset: true };
 }

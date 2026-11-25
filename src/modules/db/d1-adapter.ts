@@ -6,6 +6,8 @@ import type {
   MilitaryStatus,
 } from '@/modules/announcements/types';
 import type {
+  AuthToken,
+  AuthTokenPurpose,
   CreateUserInput,
   DatabaseAdapter,
   EducationLevel,
@@ -19,6 +21,7 @@ import type {
   StoredUser,
   Subscription,
   SubscriptionStatus,
+  SyncRun,
   UpsertAnnouncementsResult,
   UserProfile,
 } from './types';
@@ -85,6 +88,7 @@ function mapUserRow(row: Record<string, unknown>): StoredUser {
     passwordHash: String(row.password_hash),
     fullName: row.full_name != null ? String(row.full_name) : null,
     phone: row.phone != null ? String(row.phone) : null,
+    emailVerifiedAt: row.email_verified_at != null ? String(row.email_verified_at) : null,
     acceptedTermsAt: String(row.accepted_terms_at),
     acceptedPrivacyAt: String(row.accepted_privacy_at),
     createdAt: String(row.created_at),
@@ -207,6 +211,7 @@ export class D1Adapter implements DatabaseAdapter {
       passwordHash: input.passwordHash,
       fullName: input.fullName ?? null,
       phone: input.phone ?? null,
+      emailVerifiedAt: null,
       acceptedTermsAt: input.acceptedTermsAt,
       acceptedPrivacyAt: input.acceptedPrivacyAt,
       createdAt: input.now,
@@ -253,6 +258,42 @@ export class D1Adapter implements DatabaseAdapter {
     };
   }
 
+  async markEmailVerified(userId: string, verifiedAt: string): Promise<StoredUser | null> {
+    const existing = await this.findUserById(userId);
+    if (!existing) return null;
+
+    await this.db
+      .prepare('UPDATE users SET email_verified_at = ?, updated_at = ? WHERE id = ?')
+      .bind(verifiedAt, verifiedAt, userId)
+      .run();
+
+    return {
+      ...existing,
+      emailVerifiedAt: verifiedAt,
+      updatedAt: verifiedAt,
+    };
+  }
+
+  async updateUserPassword(
+    userId: string,
+    passwordHash: string,
+    now: string,
+  ): Promise<StoredUser | null> {
+    const existing = await this.findUserById(userId);
+    if (!existing) return null;
+
+    await this.db
+      .prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+      .bind(passwordHash, now, userId)
+      .run();
+
+    return {
+      ...existing,
+      passwordHash,
+      updatedAt: now,
+    };
+  }
+
   async deleteUser(userId: string): Promise<boolean> {
     const existing = await this.findUserById(userId);
     if (!existing) return false;
@@ -263,6 +304,7 @@ export class D1Adapter implements DatabaseAdapter {
       this.db.prepare('DELETE FROM notification_prefs WHERE user_id = ?').bind(userId),
       this.db.prepare('DELETE FROM user_profiles WHERE user_id = ?').bind(userId),
       this.db.prepare('DELETE FROM subscriptions WHERE user_id = ?').bind(userId),
+      this.db.prepare('DELETE FROM auth_tokens WHERE user_id = ?').bind(userId),
       this.db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
       this.db.prepare('DELETE FROM users WHERE id = ?').bind(userId),
     ]);
@@ -301,6 +343,52 @@ export class D1Adapter implements DatabaseAdapter {
 
   async deleteSessionsByUserId(userId: string): Promise<void> {
     await this.db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run();
+  }
+
+  async createAuthToken(token: AuthToken): Promise<AuthToken> {
+    await this.db
+      .prepare(
+        `INSERT INTO auth_tokens (id, user_id, purpose, token_hash, expires_at, used_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        token.id,
+        token.userId,
+        token.purpose,
+        token.tokenHash,
+        token.expiresAt,
+        token.usedAt,
+        token.createdAt,
+      )
+      .run();
+    return { ...token };
+  }
+
+  async findAuthTokenByHash(
+    tokenHash: string,
+    purpose: AuthTokenPurpose,
+  ): Promise<AuthToken | null> {
+    const row = await this.db
+      .prepare('SELECT * FROM auth_tokens WHERE token_hash = ? AND purpose = ? LIMIT 1')
+      .bind(tokenHash, purpose)
+      .first<Record<string, unknown>>();
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      userId: String(row.user_id),
+      purpose: String(row.purpose) as AuthTokenPurpose,
+      tokenHash: String(row.token_hash),
+      expiresAt: String(row.expires_at),
+      usedAt: row.used_at != null ? String(row.used_at) : null,
+      createdAt: String(row.created_at),
+    };
+  }
+
+  async markAuthTokenUsed(id: string, usedAt: string): Promise<void> {
+    await this.db
+      .prepare('UPDATE auth_tokens SET used_at = ? WHERE id = ?')
+      .bind(usedAt, id)
+      .run();
   }
 
   async getProfile(userId: string): Promise<UserProfile | null> {
@@ -631,20 +719,24 @@ export class D1Adapter implements DatabaseAdapter {
       plan: String(row.plan) as PlanTier,
       status: String(row.status) as SubscriptionStatus,
       provider: String(row.provider),
+      externalSubscriptionId:
+        row.external_subscription_id != null ? String(row.external_subscription_id) : null,
       currentPeriodEnd: row.current_period_end != null ? String(row.current_period_end) : null,
       updatedAt: String(row.updated_at),
     };
   }
 
   async upsertSubscription(subscription: Subscription): Promise<Subscription> {
+    const externalId = subscription.externalSubscriptionId ?? null;
     await this.db
       .prepare(
-        `INSERT INTO subscriptions (id, user_id, plan, status, provider, current_period_end, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO subscriptions (id, user_id, plan, status, provider, external_subscription_id, current_period_end, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(user_id) DO UPDATE SET
            plan = excluded.plan,
            status = excluded.status,
            provider = excluded.provider,
+           external_subscription_id = excluded.external_subscription_id,
            current_period_end = excluded.current_period_end,
            updated_at = excluded.updated_at`,
       )
@@ -654,10 +746,53 @@ export class D1Adapter implements DatabaseAdapter {
         subscription.plan,
         subscription.status,
         subscription.provider,
+        externalId,
         subscription.currentPeriodEnd,
         subscription.updatedAt,
       )
       .run();
-    return { ...subscription };
+    return { ...subscription, externalSubscriptionId: externalId };
+  }
+
+  async recordSyncRun(run: SyncRun): Promise<SyncRun> {
+    await this.db
+      .prepare(
+        `INSERT OR REPLACE INTO sync_runs (
+          id, triggered_by, started_at, finished_at, status,
+          synced_count, reminders_sent, new_alerts_sent, errors_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        run.id,
+        run.triggeredBy,
+        run.startedAt,
+        run.finishedAt,
+        run.status,
+        run.syncedCount,
+        run.remindersSent,
+        run.newAlertsSent,
+        run.errorsJson,
+      )
+      .run();
+    return { ...run };
+  }
+
+  async listSyncRuns(limit = 10): Promise<SyncRun[]> {
+    const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const res = await this.db
+      .prepare('SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT ?')
+      .bind(safeLimit)
+      .all<Record<string, unknown>>();
+    return (res.results ?? []).map((row) => ({
+      id: String(row.id),
+      triggeredBy: String(row.triggered_by),
+      startedAt: String(row.started_at),
+      finishedAt: String(row.finished_at),
+      status: String(row.status),
+      syncedCount: Number(row.synced_count ?? 0),
+      remindersSent: Number(row.reminders_sent ?? 0),
+      newAlertsSent: Number(row.new_alerts_sent ?? 0),
+      errorsJson: String(row.errors_json ?? '[]'),
+    }));
   }
 }

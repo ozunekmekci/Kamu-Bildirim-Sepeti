@@ -9,15 +9,40 @@ export type SubscriptionStatus = 'active' | 'canceled' | 'trialing';
 export type EducationLevel = 'lisans' | 'onlisans' | 'ortaogretim';
 export type KpssScoreType = 'P3' | 'P93' | 'P94';
 
+export type AuthTokenPurpose = 'email_verify' | 'password_reset';
+
 export interface User {
   id: string;
   email: string;
   fullName: string | null;
   phone: string | null;
+  emailVerifiedAt: string | null;
   acceptedTermsAt: string;
   acceptedPrivacyAt: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AuthToken {
+  id: string;
+  userId: string;
+  purpose: AuthTokenPurpose;
+  tokenHash: string;
+  expiresAt: string;
+  usedAt: string | null;
+  createdAt: string;
+}
+
+export interface SyncRun {
+  id: string;
+  triggeredBy: string;
+  startedAt: string;
+  finishedAt: string;
+  status: string;
+  syncedCount: number;
+  remindersSent: number;
+  newAlertsSent: number;
+  errorsJson: string;
 }
 
 export interface StoredUser extends User {
@@ -62,6 +87,7 @@ export interface Subscription {
   plan: PlanTier;
   status: SubscriptionStatus;
   provider: string;
+  externalSubscriptionId?: string | null;
   currentPeriodEnd: string | null;
   updatedAt: string;
 }
@@ -128,12 +154,18 @@ export interface DatabaseAdapter {
     userId: string,
     patch: { fullName?: string | null; phone?: string | null; now: string },
   ): Promise<StoredUser | null>;
+  markEmailVerified(userId: string, verifiedAt: string): Promise<StoredUser | null>;
+  updateUserPassword(userId: string, passwordHash: string, now: string): Promise<StoredUser | null>;
   deleteUser(userId: string): Promise<boolean>;
 
   createSession(session: Session): Promise<Session>;
   findSessionByTokenHash(tokenHash: string): Promise<Session | null>;
   deleteSessionByTokenHash(tokenHash: string): Promise<void>;
   deleteSessionsByUserId(userId: string): Promise<void>;
+
+  createAuthToken(token: AuthToken): Promise<AuthToken>;
+  findAuthTokenByHash(tokenHash: string, purpose: AuthTokenPurpose): Promise<AuthToken | null>;
+  markAuthTokenUsed(id: string, usedAt: string): Promise<void>;
 
   getProfile(userId: string): Promise<UserProfile | null>;
   upsertProfile(profile: UserProfile): Promise<UserProfile>;
@@ -166,4 +198,7 @@ export interface DatabaseAdapter {
 
   getSubscription(userId: string): Promise<Subscription | null>;
   upsertSubscription(subscription: Subscription): Promise<Subscription>;
+
+  recordSyncRun(run: SyncRun): Promise<SyncRun>;
+  listSyncRuns(limit?: number): Promise<SyncRun[]>;
 }

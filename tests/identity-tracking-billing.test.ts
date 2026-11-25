@@ -316,6 +316,7 @@ describe('D1Adapter', () => {
       'DELETE FROM notification_prefs WHERE user_id = ?',
       'DELETE FROM user_profiles WHERE user_id = ?',
       'DELETE FROM subscriptions WHERE user_id = ?',
+      'DELETE FROM auth_tokens WHERE user_id = ?',
       'DELETE FROM sessions WHERE user_id = ?',
       'DELETE FROM users WHERE id = ?',
     ]);

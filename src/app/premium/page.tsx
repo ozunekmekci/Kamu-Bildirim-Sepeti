@@ -5,10 +5,19 @@ import Link from 'next/link';
 import { Check, AlertCircle, CheckCircle2 } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 
+type BillingProvider = 'demo' | 'stripe' | 'iyzico';
+
+function formatProviderLabel(provider: BillingProvider): string {
+  if (provider === 'stripe') return 'Stripe';
+  if (provider === 'iyzico') return 'iyzico';
+  return 'Demo';
+}
+
 export default function PremiumPage() {
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<'free' | 'premium'>('free');
+  const [provider, setProvider] = useState<BillingProvider>('demo');
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -29,9 +38,13 @@ export default function PremiumPage() {
         }
         const data = (await res.json()) as {
           entitlements?: { plan: 'free' | 'premium' };
+          provider?: BillingProvider;
         };
         setAuthenticated(true);
         setCurrentPlan(data.entitlements?.plan ?? 'free');
+        if (data.provider === 'stripe' || data.provider === 'iyzico' || data.provider === 'demo') {
+          setProvider(data.provider);
+        }
       })
       .catch(() => {
         if (active) setError('Sunucuya bağlanılamadı.');
@@ -49,28 +62,57 @@ export default function PremiumPage() {
     setSuccess(null);
     setSwitching(true);
     try {
-      const res = await fetch('/api/billing/plan', {
+      let res = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: targetPlan }),
       });
+
       if (res.status === 401) {
         setError('Plan değişikliği için önce giriş yapmalısınız.');
         return;
       }
-      const data = (await res.json()) as {
+
+      let data = (await res.json()) as {
         error?: string;
+        mode?: 'demo' | 'redirect';
+        provider?: BillingProvider;
+        checkoutUrl?: string;
         entitlements?: { plan: 'free' | 'premium' };
       };
+
+      if (res.status === 404 || (res.ok && !data.mode && !data.checkoutUrl)) {
+        res = await fetch('/api/billing/plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan: targetPlan }),
+        });
+        if (res.status === 401) {
+          setError('Plan değişikliği için önce giriş yapmalısınız.');
+          return;
+        }
+        data = (await res.json()) as typeof data;
+      }
+
       if (!res.ok) {
         setError(data.error || 'Plan güncellenemedi.');
         return;
       }
+
+      if (data.provider === 'stripe' || data.provider === 'iyzico' || data.provider === 'demo') {
+        setProvider(data.provider);
+      }
+
+      if (data.mode === 'redirect' && data.checkoutUrl) {
+        window.location.assign(data.checkoutUrl);
+        return;
+      }
+
       const nextPlan = data.entitlements?.plan ?? targetPlan;
       setCurrentPlan(nextPlan);
       setSuccess(
         nextPlan === 'premium'
-          ? 'Premium plana geçiş tamamlandı (Faz 1 Demo).'
+          ? 'Premium plana geçiş tamamlandı (Demo).'
           : 'Ücretsiz plana geçiş tamamlandı.'
       );
     } catch {
@@ -80,15 +122,24 @@ export default function PremiumPage() {
     }
   };
 
+  const activeProviderLabel = formatProviderLabel(provider);
+
   return (
     <AppShell>
       <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-6 space-y-2">
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
-            Kamu Bildirim Sepeti Planları
-          </h1>
+        <div className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-6 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+              Kamu Bildirim Sepeti Planları
+            </h1>
+            {authenticated && (
+              <span className="text-xs font-semibold px-2.5 py-1 border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+                Ödeme Sağlayıcısı: {activeProviderLabel}
+              </span>
+            )}
+          </div>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-            Temel ilan takibi ve KPSS arşivi tüm kullanıcılar için ücretsizdir. Profil eşleştirme ve anlık hatırlatıcılar için Premium planı seçebilirsiniz. Faz 1 kapsamında plan geçişi demo ödeme bağdaştırıcısı üzerinden gerçekleştirilir.
+            Temel ilan takibi ve KPSS arşivi tüm kullanıcılar için ücretsizdir. Profil eşleştirme ve anlık hatırlatıcılar için Premium planı seçebilirsiniz.
           </p>
         </div>
 
@@ -185,7 +236,18 @@ export default function PremiumPage() {
               </div>
 
               <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                Demo Erişim <span className="text-xs font-normal text-slate-600 dark:text-slate-400">(Faz 1)</span>
+                {provider === 'demo' ? (
+                  <>
+                    Demo Erişim <span className="text-xs font-normal text-slate-600 dark:text-slate-400">(Test Modu)</span>
+                  </>
+                ) : (
+                  <>
+                    Premium Erişim{' '}
+                    <span className="text-xs font-normal text-slate-600 dark:text-slate-400">
+                      ({activeProviderLabel})
+                    </span>
+                  </>
+                )}
               </div>
 
               <ul className="space-y-2.5 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
@@ -218,8 +280,10 @@ export default function PremiumPage() {
                 {currentPlan === 'premium'
                   ? 'Aktif Plan'
                   : switching
-                    ? 'Geçiş Yapılıyor...'
-                    : 'Premium Plana Geç (Demo)'}
+                    ? 'Yönlendiriliyor...'
+                    : provider === 'demo'
+                      ? 'Premium Plana Geç (Demo)'
+                      : `Premium Plana Geç (${activeProviderLabel})`}
               </button>
             ) : (
               <Link

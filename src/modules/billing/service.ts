@@ -4,8 +4,30 @@ import type {
   PlanTier,
   Subscription,
   SubscriptionStatus,
+  User,
 } from '@/modules/db/types';
 import { generateId } from '@/modules/identity/crypto';
+import {
+  DemoPaymentAdapter,
+  type PaymentAdapter,
+  createPaymentAdapter,
+} from './payment-adapters';
+
+export {
+  type CheckoutSessionInput,
+  type CheckoutSessionResponse,
+  DemoPaymentAdapter,
+  IyzicoPaymentAdapter,
+  type IyzicoPaymentAdapterOptions,
+  type PaymentAdapter,
+  type PaymentCheckoutResult,
+  StripePaymentAdapter,
+  type StripePaymentAdapterOptions,
+  createPaymentAdapter,
+  getPaymentProviderStatus,
+  verifyIyzicoWebhookSignature,
+  verifyStripeWebhookSignature,
+} from './payment-adapters';
 
 export class BillingError extends Error {
   constructor(
@@ -15,40 +37,6 @@ export class BillingError extends Error {
   ) {
     super(message);
     this.name = 'BillingError';
-  }
-}
-
-export interface PaymentCheckoutResult {
-  plan: PlanTier;
-  status: SubscriptionStatus;
-  provider: string;
-  currentPeriodEnd: string | null;
-}
-
-export interface PaymentAdapter {
-  readonly providerName: string;
-  changePlan(userId: string, targetPlan: PlanTier): Promise<PaymentCheckoutResult>;
-}
-
-export class DemoPaymentAdapter implements PaymentAdapter {
-  readonly providerName = 'demo';
-
-  async changePlan(_userId: string, targetPlan: PlanTier): Promise<PaymentCheckoutResult> {
-    if (targetPlan === 'premium') {
-      const nextMonth = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      return {
-        plan: 'premium',
-        status: 'active',
-        provider: this.providerName,
-        currentPeriodEnd: nextMonth,
-      };
-    }
-    return {
-      plan: 'free',
-      status: 'active',
-      provider: this.providerName,
-      currentPeriodEnd: null,
-    };
   }
 }
 
@@ -92,6 +80,7 @@ export async function getUserBillingState(
     plan: 'free',
     status: 'active',
     provider: 'demo',
+    externalSubscriptionId: null,
     currentPeriodEnd: null,
     updatedAt: now,
   };
@@ -123,12 +112,125 @@ export async function changeUserPlan(
     plan: checkout.plan,
     status: checkout.status,
     provider: checkout.provider,
+    externalSubscriptionId: existing?.externalSubscriptionId ?? null,
     currentPeriodEnd: checkout.currentPeriodEnd,
     updatedAt: now,
   });
 
   return {
     subscription: updated,
-    entitlements: getEntitlementsForPlan(updated.plan),
+    entitlements: getEntitlementsForPlan(
+      updated.plan === 'premium' && updated.status === 'active' ? 'premium' : 'free',
+    ),
+  };
+}
+
+export type StartCheckoutResult =
+  | {
+      mode: 'demo';
+      provider: string;
+      subscription: Subscription;
+      entitlements: Entitlements;
+    }
+  | {
+      mode: 'redirect';
+      provider: string;
+      checkoutUrl: string;
+      externalSessionId: string;
+    };
+
+export async function startCheckout(
+  db: DatabaseAdapter,
+  user: Pick<User, 'id' | 'email'>,
+  targetPlan: unknown,
+  baseUrl: string,
+  adapter: PaymentAdapter = createPaymentAdapter(),
+): Promise<StartCheckoutResult> {
+  if (targetPlan !== 'free' && targetPlan !== 'premium') {
+    throw new BillingError('INVALID_PLAN', 400, 'Geçersiz abonelik planı seçimi.');
+  }
+
+  if (adapter.providerName === 'demo' || targetPlan === 'free') {
+    const result = await changeUserPlan(db, user.id, targetPlan, adapter);
+    return {
+      mode: 'demo',
+      provider: adapter.providerName,
+      subscription: result.subscription,
+      entitlements: result.entitlements,
+    };
+  }
+
+  if (!adapter.createCheckoutSession) {
+    throw new BillingError(
+      'PROVIDER_UNSUPPORTED',
+      500,
+      'Seçili ödeme sağlayıcısı yönlendirmeli ödeme oturumu desteklemiyor.',
+    );
+  }
+
+  const cleanBase = baseUrl.replace(/\/+$/, '');
+  const session = await adapter.createCheckoutSession({
+    userId: user.id,
+    userEmail: user.email,
+    targetPlan: 'premium',
+    successUrl: `${cleanBase}/premium?checkout=success`,
+    cancelUrl: `${cleanBase}/premium?checkout=cancel`,
+  });
+
+  return {
+    mode: 'redirect',
+    provider: adapter.providerName,
+    checkoutUrl: session.checkoutUrl,
+    externalSessionId: session.externalSessionId,
+  };
+}
+
+export interface WebhookSubscriptionEvent {
+  userId: string;
+  plan: PlanTier;
+  status: SubscriptionStatus;
+  provider: string;
+  externalSubscriptionId?: string | null;
+  currentPeriodEnd?: string | null;
+}
+
+export async function applyWebhookSubscriptionUpdate(
+  db: DatabaseAdapter,
+  event: WebhookSubscriptionEvent,
+): Promise<{ subscription: Subscription; entitlements: Entitlements }> {
+  if (!event.userId || typeof event.userId !== 'string') {
+    throw new BillingError(
+      'INVALID_WEBHOOK_USER',
+      400,
+      'Abonelik güncellenecek kullanıcı kimliği bulunamadı.',
+    );
+  }
+
+  const existing = await db.getSubscription(event.userId);
+  const now = new Date().toISOString();
+
+  const updated = await db.upsertSubscription({
+    id: existing?.id ?? generateId(),
+    userId: event.userId,
+    plan: event.plan,
+    status: event.status,
+    provider: event.provider,
+    externalSubscriptionId:
+      event.externalSubscriptionId !== undefined
+        ? event.externalSubscriptionId
+        : (existing?.externalSubscriptionId ?? null),
+    currentPeriodEnd:
+      event.currentPeriodEnd !== undefined
+        ? event.currentPeriodEnd
+        : (existing?.currentPeriodEnd ?? null),
+    updatedAt: now,
+  });
+
+  const effectivePlan: PlanTier =
+    updated.plan === 'premium' && updated.status === 'active' ? 'premium' : 'free';
+
+  return {
+    subscription: updated,
+    entitlements: getEntitlementsForPlan(effectivePlan),
   };
 }

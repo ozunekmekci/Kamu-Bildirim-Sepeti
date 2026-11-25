@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { syncOfficialSources } from '@/modules/announcements';
 import { getDb } from '@/modules/db';
-import { dispatchPendingReminders } from '@/modules/tracking';
+import { generateId } from '@/modules/identity/crypto';
+import {
+  createEmailAdapter,
+  dispatchNewAnnouncementAlerts,
+  dispatchPendingReminders,
+} from '@/modules/tracking';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,19 +32,53 @@ export async function POST(request: Request) {
     }
   }
 
+  const startedAt = new Date().toISOString();
+  const triggeredBy =
+    request.headers.get('x-cron-trigger') ??
+    (request.headers.get('cf-cron') ? 'cloudflare_cron' : 'api');
+
   const db = await getDb();
+  const existingAnnouncements = await db.listAnnouncements({ status: 'hepsi' });
+  const existingIds = new Set(existingAnnouncements.map((item) => item.id));
+
   const syncResult = await syncOfficialSources(async (items) => {
     const res = await db.upsertAnnouncements(items);
     return res.inserted + res.updated;
   });
 
-  const reminders = await dispatchPendingReminders(db);
+  const newAnnouncements = syncResult.items.filter((item) => !existingIds.has(item.id));
+  const emailAdapter = createEmailAdapter();
+
+  const reminders = await dispatchPendingReminders(db, emailAdapter);
+  const newAlerts = await dispatchNewAnnouncementAlerts(db, newAnnouncements, emailAdapter);
+
+  const finishedAt = new Date().toISOString();
+  const status =
+    syncResult.errors.length === 0
+      ? 'success'
+      : syncResult.syncedCount > 0
+        ? 'partial'
+        : 'error';
+
+  const syncRun = await db.recordSyncRun({
+    id: generateId(),
+    triggeredBy,
+    startedAt,
+    finishedAt,
+    status,
+    syncedCount: syncResult.syncedCount,
+    remindersSent: reminders.sentCount,
+    newAlertsSent: newAlerts.sentCount,
+    errorsJson: JSON.stringify(syncResult.errors),
+  });
 
   return NextResponse.json(
     {
       syncedCount: syncResult.syncedCount,
       errors: syncResult.errors,
       reminders,
+      newAlerts,
+      syncRun,
     },
     { status: 200 },
   );

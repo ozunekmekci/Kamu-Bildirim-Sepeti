@@ -14,8 +14,9 @@ Platform aşağıdaki resmî kamu kaynaklarından derlenen ilan yapılarını ve
 ## Teknoloji Yığını
 - **Framework:** Next.js 16 (App Router) + React 19 + TypeScript 5
 - **Stil:** Tailwind CSS v4 (Açık ve Koyu tema destekli)
-- **Çalışma Ortamı & Veritabanı:** OpenNext Cloudflare Workers + Cloudflare D1 (`migrations/0001_init.sql`) + Cron Triggers (`0 */6 * * *`)
-- **Kimlik Doğrulama & Güvenlik:** Edge uyumlu Web Crypto (`PBKDF2` SHA-256 + `HMAC-SHA256`), `kbs_session` HttpOnly/SameSite=Lax çerezi, self-servis KVKK hesap silme
+- **Çalışma Ortamı & Veritabanı:** OpenNext Cloudflare Workers + Cloudflare D1 (`migrations/0001_init.sql`, `migrations/0002_phase2.sql`) + Cron Triggers (`0 */6 * * *`)
+- **Kimlik Doğrulama & Güvenlik:** Edge uyumlu Web Crypto (`PBKDF2` SHA-256 + `HMAC-SHA256`), `kbs_session` HttpOnly/SameSite=Lax çerezi, tek kullanımlık e-posta doğrulama ve parola sıfırlama token akışları (`/eposta-dogrula`, `/sifre-sifirla`), self-servis KVKK hesap silme
+- **E-posta ve Ödeme Adaptörleri:** `Resend` / `MailChannels` / `Noop` e-posta adaptörleri; `Demo` / `Stripe` / `iyzico` ödeme adaptörleri ve Web Crypto HMAC webhook doğrulaması
 - **Test:** Vitest + Testing Library
 
 ## Yerel Geliştirme
@@ -38,28 +39,47 @@ npm run build:worker
 
 ## Cloudflare D1 Kurulumu ve Dağıtım
 
+Otomatik kurulum önizlemesi ve adımları için `scripts/setup-cloudflare.sh` betiğini kullanabilirsiniz (varsayılan `--dry-run` modunda çalışır, canlı uygulama için `--execute` verilir):
+
+```bash
+bash scripts/setup-cloudflare.sh
+```
+
+Manuel adımlar:
 1. Cloudflare D1 veritabanı oluşturun:
 ```bash
 npx wrangler d1 create kamu_bildirim_sepeti
 ```
 2. Çıktıdaki `database_id` değerini `wrangler.jsonc` içindeki `REPLACE_WITH_D1_DATABASE_ID` alanına yazın.
-3. Şema migrasyonlarını uygulayın:
+3. Şema migrasyonlarını (`0001_init.sql` ve `0002_phase2.sql`) uygulayın:
 ```bash
 npx wrangler d1 migrations apply kamu_bildirim_sepeti --local
 npx wrangler d1 migrations apply kamu_bildirim_sepeti --remote
 ```
-4. Worker gizli ortam değişkenlerini tanımlayın:
+4. Worker ortam ve gizli değişkenlerini tanımlayın:
 ```bash
 npx wrangler secret put SESSION_SECRET
 npx wrangler secret put CRON_SECRET
+npx wrangler secret put RESEND_API_KEY
+npx wrangler secret put MAILCHANNELS_API_KEY
+npx wrangler secret put STRIPE_SECRET_KEY
+npx wrangler secret put STRIPE_WEBHOOK_SECRET
+npx wrangler secret put IYZICO_API_KEY
+npx wrangler secret put IYZICO_SECRET_KEY
 ```
    - `SESSION_SECRET`: Oturum çerezi (`kbs_session`) HMAC-SHA256 imzalama anahtarı (en az 32 bayt rastgele değer önerilir).
    - `CRON_SECRET`: `POST /api/cron/sync` uç noktasını `Authorization: Bearer <secret>` veya `x-cron-secret` başlığıyla korumak için kullanılır.
+   - `RESEND_API_KEY` / `MAILCHANNELS_API_KEY` / `EMAIL_FROM`: Canlı hatırlatma, anlık ilan uyarısı, e-posta doğrulama ve parola sıfırlama gönderimi için kullanılır (anahtar yoksa `NoopEmailAdapter` seçilir).
+   - `PAYMENT_PROVIDER` (`demo` | `stripe` | `iyzico`), `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `IYZICO_API_KEY`, `IYZICO_SECRET_KEY`, `IYZICO_BASE_URL`: Ödeme adaptörü ve fail-closed webhook doğrulaması için kullanılır.
 5. Worker derleme ve yayınlama:
 ```bash
 npm run build:worker
 npm run deploy
 ```
+
+## Faz 2 Rotaları
+- **Sayfalar:** `/sifre-sifirla`, `/eposta-dogrula` (mevcut `/`, `/ilan/[id]`, `/kayitli`, `/profil`, `/ayarlar`, `/premium`, `/giris`, `/kayit`, `/kpss-arsivi` sayfalarına ek olarak)
+- **API Uç Noktaları:** `POST /api/auth/verify-email`, `POST /api/auth/resend-verification`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`, `GET /api/sync/status`, `POST /api/billing/checkout`, `POST /api/billing/webhook/stripe`, `POST /api/billing/webhook/iyzico`
 
 ## Dokümantasyon ve Ajan Devir Dosyaları
 - [AGENTS.md](AGENTS.md): Ajan kuralları, mimari modül haritası ve doğrulama sözleşmesi
