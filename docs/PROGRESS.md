@@ -1,7 +1,20 @@
 # Kamu Bildirim Sepeti - İlerleme ve Devir Defteri
 
 **Son Güncelleme:** 2026-11-27  
-**Aktif Faz:** Faz 9 Sprint 1 + SBB/RSS Üretim Hata Düzeltmeleri (Tamamlandı ve Canlıda Doğrulandı)
+**Aktif Faz:** SBB/İŞKUR PDF + Türkçe OCR Zenginleştirme, Gelişmiş Kriter Filtreleri ve Kayıtlı Arama Alarmları (Tamamlandı ve Canlıda Doğrulandı)
+
+## SBB/İŞKUR PDF + OCR Zenginleştirme, Kriter Filtreleri ve Kayıtlı Arama Alarmları (Tamamlandı)
+- [x] **PDF Kriter Ayrıştırma, Eşleştirme v2.1 ve D1 JSON Alanları (`src/modules/announcements/{types,parsers,pdf-criteria,index}.ts`, `src/modules/matching/engine.ts`, `src/modules/db/{types,d1-adapter,memory-adapter}.ts`, `tests/pdf-criteria-and-matching.test.ts`):** `AnnouncementCriteria` (`departments`, `maxAge`, `gender`, `extractedTextExcerpt`), `AnnouncementFilter` ve `SavedSearchFilters` sıfır SQL migrasyonu ile genişletildi; saf Edge-uyumlu `enrichAnnouncementFromPdfText` eklendi; parantezli/çoklu ehliyet (`(C) sınıfı`), KPSS tablo puanı öncelikli taban puan ayrıştırma (sözlü/uygulamalı 60 barajı yanlış pozitifleri engellendi), OCR sütun gürültüsü temizlemeli bölüm çıkarımı ve pozisyon bazlı ehliyet/sertifika/bölüm eşleştirmesi eklendi.
+- [x] **SBB/İŞKUR PDF + Türkçe OCR Boru Hattı ve Artımlı Uzak Sync (`scripts/pdf-extract.ts`, `scripts/sync-remote.ts`, `src/modules/announcements/connectors.ts`, `.github/workflows/sync-official-sources.yml`, `tests/pdf-extract.test.ts`, `tests/sync-remote-pdf.test.ts`):** `pdftotext` + `pdftoppm`/`tesseract -l tur` geri dönüşlü PDF çıkarıcı, SBB `Referer` başlığı, `GET /api/cron/ingest` ile artımlı atlama (`--pdf-limit`, `--ocr-limit`) ve GitHub Actions `poppler-utils` + `tesseract-ocr-tur` adımı eklendi (`sync:remote --dry-run --pdf-limit=15 --ocr-limit=5`: 15/15 PDF zenginleştirildi, 194 alt kadro, 0 hata).
+- [x] **Gelişmiş Kriter Filtreleri, `/ilan/[id]` PDF Şartları UI ve Kayıtlı Arama Bildirimleri (`src/modules/announcements/service.ts`, `src/app/api/{announcements,saved-searches,cron/ingest}/route.ts`, `src/modules/{tracking,push}/service.ts`, `src/components/{AnnouncementFeed,AnnouncementDetailClient}.tsx`, `tests/criteria-filters-and-saved-search-alerts.test.tsx`):** `educationLevel`, `kpssScoreType`, `maxKpssScore`, `driverLicense` ve `department` filtreleri API + ana akış + kayıtlı aramalara bağlandı; `/ilan/[id]` sayfasına çıkarılan bölüm/ehliyet/sertifika/yaş/cinsiyet ve katlanabilir PDF özeti eklendi; `saved_searches` e-posta ve Web Push bildirim akışı tekilleştirmeli olarak bağlandı.
+
+## Doğrulama Özeti (PDF+OCR ve Kriter Filtreleri Son Doğrulama)
+- [x] Hijyen taraması (`src/`, `scripts/`, `tests/`, `docs/`, `HANDOFF.md`, `AGENTS.md` satır 10+): **0** yasaklı rakip adı, **0** `\u2014`, `pdf-criteria.ts` içinde **0** `node:*` importu
+- [x] `npx vitest run --no-file-parallelism`: **41/41 test dosyası, 417/417 test geçti (`46.17s`, `EXIT=0`)**
+- [x] `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run build:worker`: **EXIT=0** (54 statik/SSG/dinamik rota)
+- [x] `node scripts/browser-audit.mjs`: **`[AUDIT PASSED]`** (14 rota HTTP 200, 0 konsol/ağ hatası, 20/20 Masaüstü/Mobil Açık/Koyu matriste 0 taşma, 5/5 R-35 etkileşimi geçti)
+- [x] Canlı Bozköy SBB OCR doğrulaması (`sbb-19e513b2ca14a4ca`, `pdfMethod: "ocr"`, `8.553` karakter): `city: "NİĞDE"`, `quota: 1`, `applyUrl: "https://www.bozkoy.bel.tr"`, `educationLevels: ["lisans"]`, `kpssScoreTypes: ["P3"]`, `minKpssScore: 65`, `driverLicenses: ["C"]`, `maxAge: 30`, `departments: ["Egzersiz ve Spor Bilimleri", "Spor Yöneticiliği", "Antrenörlük Eğitimi"]`, `positionsCount: 1`
+- [x] Canlı Workers deploy (`https://kpssportal.ozunekmekci.workers.dev`, Version `fa0469df-00ed-495b-8565-8ded9e2f92f7`): Total Upload `10,462.87 KiB` / gzip `2,390.23 KiB`, startup `19 ms`, Cron `*/5 * * * *`
 
 ## SBB Referer 404, Stabil ID ve RSS Status Düzeltmeleri (Tamamlandı)
 - [x] **SBB Harici 404 Koruması (`src/modules/announcements/official-link.ts`, `src/modules/announcements/index.ts`, `AnnouncementDetailClient.tsx`, `AnnouncementFeed.tsx`, `kayitli/page.tsx`, `sehir/[slug]/page.tsx`, `kaynak/[slug]/page.tsx`):** `kamuilan.sbb.gov.tr/ilanDetay.aspx?kod=...` yalnızca SBB içi `Referer` kabul ettiğinden, dış tıklamada 404 yerine varsa çapraz kaynak direkt linki veya `https://kamuilan.sbb.gov.tr/` + tek tık `Kurum Adını Kopyala` fallback akışı bağlandı.
