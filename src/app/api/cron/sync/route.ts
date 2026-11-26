@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { syncOfficialSources } from '@/modules/announcements';
 import { getDb } from '@/modules/db';
 import { generateId } from '@/modules/identity/crypto';
+import { createWebPushAdapter, dispatchPushForNewAnnouncements } from '@/modules/push';
 import {
   createEmailAdapter,
   dispatchNewAnnouncementAlerts,
@@ -48,9 +49,11 @@ export async function POST(request: Request) {
 
   const newAnnouncements = syncResult.items.filter((item) => !existingIds.has(item.id));
   const emailAdapter = createEmailAdapter();
+  const pushAdapter = createWebPushAdapter();
 
   const reminders = await dispatchPendingReminders(db, emailAdapter);
   const newAlerts = await dispatchNewAnnouncementAlerts(db, newAnnouncements, emailAdapter);
+  const pushAlerts = await dispatchPushForNewAnnouncements(db, newAnnouncements, pushAdapter);
 
   const finishedAt = new Date().toISOString();
   const status =
@@ -78,6 +81,7 @@ export async function POST(request: Request) {
       errors: syncResult.errors,
       reminders,
       newAlerts,
+      pushAlerts,
       syncRun,
     },
     { status: 200 },

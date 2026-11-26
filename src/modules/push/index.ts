@@ -1,4 +1,6 @@
 export {
+  createWebPushAdapter,
+  dispatchPushForNewAnnouncements,
   dispatchPushNotification,
   getPublicVapidKey,
   InMemoryWebPushAdapter,
@@ -11,5 +13,19 @@ export {
   type SubscribePushInput,
   subscribeUserPush,
   unsubscribeUserPush,
+  VapidWebPushAdapter,
+  type VapidWebPushAdapterOptions,
   type WebPushAdapter,
 } from './service';
+export {
+  base64UrlToBytes,
+  bytesToBase64Url,
+  type CreateVapidAuthHeaderOptions,
+  createVapidAuthHeader,
+  DEFAULT_VAPID_TTL_SECONDS,
+  encryptPushPayload,
+  type EncryptPushPayloadOptions,
+  generateVapidKeyPair,
+  type VapidAuthHeaders,
+  type VapidKeyPair,
+} from './vapid';

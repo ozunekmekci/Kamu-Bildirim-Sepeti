@@ -1,7 +1,23 @@
 # Kamu Bildirim Sepeti - İlerleme ve Devir Defteri
 
 **Son Güncelleme:** 2026-11-26  
-**Aktif Faz:** Faz 3 (Web Push, Analitik Panosu, Programatik SEO ve Senaryo Karşılaştırma)
+**Aktif Faz:** Faz 4 (RFC 8291/8292 Web Push, Parser Kalibrasyonu, Health Uç Noktası ve Kurulum Hazırlığı)
+
+## Faz 4 Tamamlananlar
+- [x] **Sıfır Bağımlılıklı Web Crypto VAPID & RFC 8291 Push (`src/modules/push/`, `src/app/api/cron/sync/route.ts`):** `src/modules/push/vapid.ts` içinde standart Web Crypto (`crypto.subtle`, `crypto.getRandomValues`) ile `bytesToBase64Url`, `base64UrlToBytes`, `generateVapidKeyPair`, RFC 8292 ES256 JWT imzalayıcı `createVapidAuthHeader` ve RFC 8291 (`aes128gcm`) `encryptPushPayload` uygulandı; `VapidWebPushAdapter`, `createWebPushAdapter`, `404`/`410` otomatik abonelik budama (`dispatchPushNotification`) ve Premium/profil/tekilleştirme (`push_new_announcement`) kurallı `dispatchPushForNewAnnouncements` eklenerek `POST /api/cron/sync` (`pushAlerts`) içine bağlandı.
+- [x] **Resmî Kaynak Ayrıştırıcı Kalibrasyonu (`src/modules/announcements/parsers.ts`):** `tests/announcements.test.ts` uyumluluğu korunarak `application/ld+json` `JobPosting` ayrıştırması, RSS `<item>` / Atom `<entry>` XML geri dönüş desteği, Resmî Gazete `fihrist-item` PDF bağlantı çıkarımı ile kurum/başlık ayrımı ve `fetchOfficialAnnouncements` için `User-Agent` başlığı eklendi.
+- [x] **Sağlık Uç Noktası, Ortam Şablonu ve Cloudflare Kurulum Aracı (`src/app/api/health/route.ts`, `.env.example`, `scripts/setup-cloudflare.sh`):** Gizli anahtar değerlerini sızdırmadan yalnızca sağlayıcı adları ile hazır olma bayraklarını döndüren `force-dynamic` `GET /api/health`, Faz 1-4 için 17 değişkenli `.env.example` ve `0001_init.sql + 0002_phase2.sql + 0003_phase3.sql` + `--generate-vapid` (P-256 Web Crypto anahtar üretimi) destekli `scripts/setup-cloudflare.sh` tamamlandı.
+- [x] **Ayarlar Altyapı Hazırlığı Şeridi ve Test Stabilizasyonu (`src/app/ayarlar/page.tsx`, `tests/phase4-*.test.*`, `tests/search-engine-empirical-challenge.test.ts`):** `/ayarlar` içindeki `Resmî Kaynak Senkronizasyon Durumu` kartına canlı `GET /api/health` tabanlı 4 etiketli `Sistem Altyapı Hazırlığı` (`Veritabanı`, `E-posta`, `Ödeme`, `Web Push`) şeridi ve hata durumunda zarif geri dönüş eklendi; paralel Vitest CPU çekişmesi için `search-engine-empirical-challenge.test.ts` eşiği stabilize edildi.
+
+## Doğrulama Özeti (Faz 4 Son Doğrulama)
+- [x] Yasaklı referans marka taraması: 0 eşleşme (`src/`, `tests/`, `migrations/`, `docs/`, `public/`, `scripts/`, `.env.example`)
+- [x] Em-dash (`\u2014`) metin taraması: 0 eşleşme (`src/app/**`, `src/components/**`, `src/modules/**`, `public/sw.js`, `scripts/setup-cloudflare.sh`, `.env.example`, `docs/`, `README.md`, `AGENTS.md` satır 10+)
+- [x] Varsayılan paralel `npm test`: **27/27 test dosyası, 331/331 test geçti (`EXIT=0`, `8.08s`)**
+- [x] `npm run lint`: 0 hata (`EXIT=0`)
+- [x] `npm run build`: Next.js 16.3.5 üretim derlemesi başarılı (`EXIT=0`)
+- [x] `npx opennextjs-cloudflare build`: Başarılı, `.open-next/worker.js` üretildi (`2278` bayt, `EXIT=0`)
+- [x] Kurulum betiği doğrulaması (`bash -n scripts/setup-cloudflare.sh && bash scripts/setup-cloudflare.sh --dry-run && bash scripts/setup-cloudflare.sh --generate-vapid`): `EXIT=0`
+- [x] İki eksenli kod incelemesi (`Standards` + `Spec`) ve `antislop` denetimi: Geçti (`/api/health` sıfır secret sızıntısı, RFC 8291/8292 Web Crypto doğruluğu ve 410 budama, parser geri dönüş güvenliği, `.env.example` bütünlüğü, `/ayarlar` WCAG AA ve zarif hata düşüşü doğrulandı)
 
 ## Faz 3 Tamamlananlar
 - [x] **Veritabanı ve Push Migrasyonu (`migrations/0003_phase3.sql`, `src/modules/db/`):** `push_subscriptions` tablosu (`ON DELETE CASCADE`, tekil `endpoint`) ve `idx_push_subscriptions_user_id` indeksi eklendi; `PushSubscriptionRecord` tipi ile `upsertPushSubscription`, `listPushSubscriptionsByUser`, `deletePushSubscriptionByEndpoint`, `listAllPushSubscriptions` yöntemleri `D1Adapter` ve `MemoryDbAdapter` içine işlendi; her iki `deleteUser` akışı `push_subscriptions` temizliğini içerecek şekilde güncellendi (9 tablo).
@@ -62,7 +78,7 @@
    - Zorunlu güvenlik: `SESSION_SECRET`, `CRON_SECRET`
    - E-posta sağlayıcıları: `RESEND_API_KEY` veya `MAILCHANNELS_API_KEY`, `EMAIL_FROM`
    - Ödeme sağlayıcıları: `PAYMENT_PROVIDER` (`demo` | `stripe` | `iyzico`), `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `IYZICO_API_KEY`, `IYZICO_SECRET_KEY`, `IYZICO_BASE_URL`
-   - Web Push (VAPID): `VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
+   - Web Push (VAPID): `VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
 
 ## Sıradaki Başlangıç Adımı (Canlı Kurulum ve Dağıtım)
-- [ ] Canlı Cloudflare D1 üzerinde `wrangler d1 create`, `migrations/0001_init.sql`..`0003_phase3.sql` uygulaması, üretim secret yapılandırması (`SESSION_SECRET`, `CRON_SECRET`, e-posta/ödeme/VAPID anahtarları) ve canlı alan adı dağıtımını tamamlamak.
+- [ ] Harici Cloudflare kurulumu ve canlı dağıtım: `bash scripts/setup-cloudflare.sh --generate-vapid`, `bash scripts/setup-cloudflare.sh --execute`, tüm üretim gizli değişkenlerinin (`SESSION_SECRET`, `CRON_SECRET`, e-posta/ödeme/VAPID anahtarları ve `VAPID_SUBJECT`) tanımlanması ve canlı alan adı yayını.

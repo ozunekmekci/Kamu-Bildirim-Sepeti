@@ -16,7 +16,8 @@ Platform aşağıdaki resmî kamu kaynaklarından derlenen ilan yapılarını ve
 - **Stil:** Tailwind CSS v4 (Açık ve Koyu tema destekli)
 - **Çalışma Ortamı & Veritabanı:** OpenNext Cloudflare Workers + Cloudflare D1 (`migrations/0001_init.sql`, `migrations/0002_phase2.sql`, `migrations/0003_phase3.sql`) + Cron Triggers (`0 */6 * * *`)
 - **Kimlik Doğrulama & Güvenlik:** Edge uyumlu Web Crypto (`PBKDF2` SHA-256 + `HMAC-SHA256`), `kbs_session` HttpOnly/SameSite=Lax çerezi, tek kullanımlık e-posta doğrulama ve parola sıfırlama token akışları (`/eposta-dogrula`, `/sifre-sifirla`), self-servis KVKK hesap silme
-- **E-posta, Ödeme ve Web Push:** `Resend` / `MailChannels` / `Noop` e-posta adaptörleri; `Demo` / `Stripe` / `iyzico` ödeme adaptörleri ve Web Crypto HMAC webhook doğrulaması; `public/sw.js` Service Worker + `push_subscriptions` VAPID abonelik yönetimi
+- **E-posta, Ödeme ve Web Push:** `Resend` / `MailChannels` / `Noop` e-posta adaptörleri; `Demo` / `Stripe` / `iyzico` ödeme adaptörleri ve Web Crypto HMAC webhook doğrulaması; `public/sw.js` Service Worker + `push_subscriptions` + sıfır bağımlılıklı Web Crypto RFC 8291 (`aes128gcm`) & RFC 8292 (`ES256` VAPID) göndericisi (`404`/`410` otomatik budama ve `POST /api/cron/sync` entegrasyonu)
+- **Resmî Kaynak Ayrıştırma ve Sağlık İzleme:** `application/ld+json` `JobPosting`, RSS/Atom geri dönüş desteği ve Resmî Gazete PDF fihrist ayrıştırması; gizli değer sızdırmayan `GET /api/health` uç noktası ve `/ayarlar` altyapı hazırlığı şeridi
 - **Analitik ve Programatik SEO:** Gerçek veri setlerinden hesaplanan `/analiz` panosu, `/sehir/[slug]` il sayfaları, `/kaynak/[slug]` resmî kaynak sayfaları ve canlı profil senaryo karşılaştırması
 - **Test:** Vitest + Testing Library
 
@@ -40,9 +41,10 @@ npm run build:worker
 
 ## Cloudflare D1 Kurulumu ve Dağıtım
 
-Otomatik kurulum önizlemesi ve adımları için `scripts/setup-cloudflare.sh` betiğini kullanabilirsiniz (varsayılan `--dry-run` modunda çalışır, canlı uygulama için `--execute` verilir):
+Otomatik kurulum önizlemesi ve adımları için `scripts/setup-cloudflare.sh` betiğini kullanabilirsiniz (varsayılan `--dry-run` modunda çalışır, VAPID anahtarı üretmek için `--generate-vapid`, canlı uygulama için `--execute` verilir; örnek ortam değişkenleri `.env.example` dosyasında listelenir):
 
 ```bash
+bash scripts/setup-cloudflare.sh --generate-vapid
 bash scripts/setup-cloudflare.sh
 ```
 
@@ -69,22 +71,23 @@ npx wrangler secret put IYZICO_API_KEY
 npx wrangler secret put IYZICO_SECRET_KEY
 npx wrangler secret put VAPID_PUBLIC_KEY
 npx wrangler secret put VAPID_PRIVATE_KEY
+npx wrangler secret put VAPID_SUBJECT
 ```
    - `SESSION_SECRET`: Oturum çerezi (`kbs_session`) HMAC-SHA256 imzalama anahtarı (en az 32 bayt rastgele değer önerilir).
    - `CRON_SECRET`: `POST /api/cron/sync` uç noktasını `Authorization: Bearer <secret>` veya `x-cron-secret` başlığıyla korumak için kullanılır.
    - `RESEND_API_KEY` / `MAILCHANNELS_API_KEY` / `EMAIL_FROM`: Canlı hatırlatma, anlık ilan uyarısı, e-posta doğrulama ve parola sıfırlama gönderimi için kullanılır (anahtar yoksa `NoopEmailAdapter` seçilir).
    - `PAYMENT_PROVIDER` (`demo` | `stripe` | `iyzico`), `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `IYZICO_API_KEY`, `IYZICO_SECRET_KEY`, `IYZICO_BASE_URL`: Ödeme adaptörü ve fail-closed webhook doğrulaması için kullanılır.
-   - `VAPID_PUBLIC_KEY` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`: Tarayıcı anlık bildirimleri (Web Push) VAPID anahtar çifti yapılandırması için kullanılır (tanımlı değilse `/ayarlar` arayüzünde dürüst bilgi durumu gösterilir).
+   - `VAPID_PUBLIC_KEY` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`: Tarayıcı anlık bildirimleri (Web Push) RFC 8291/8292 VAPID anahtar çifti ve iletişim adresi (`mailto:` veya `https://`) yapılandırması için kullanılır (tanımlı değilse `/ayarlar` arayüzünde dürüst bilgi durumu gösterilir).
 5. Worker derleme ve yayınlama:
 ```bash
 npm run build:worker
 npm run deploy
 ```
 
-## Faz 2 ve Faz 3 Rotaları
+## Faz 2, Faz 3 ve Faz 4 Rotaları
 - **Faz 2 Sayfaları:** `/sifre-sifirla`, `/eposta-dogrula` (mevcut `/`, `/ilan/[id]`, `/kayitli`, `/profil`, `/ayarlar`, `/premium`, `/giris`, `/kayit`, `/kpss-arsivi` sayfalarına ek olarak)
 - **Faz 3 Sayfaları:** `/analiz` (açık veri ve kadro içgörüleri), `/sehir/[slug]` (il bazlı ilan ve KPSS arşivi), `/kaynak/[slug]` (resmî kaynak bazlı ilanlar), `/profil` üzerinde senaryo karşılaştırma, `/ayarlar` üzerinde Web Push yönetimi
-- **API Uç Noktaları:** `POST /api/auth/verify-email`, `POST /api/auth/resend-verification`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`, `GET /api/sync/status`, `POST /api/billing/checkout`, `POST /api/billing/webhook/stripe`, `POST /api/billing/webhook/iyzico`, `GET /api/push/vapid-key`, `GET|POST|DELETE /api/push/subscriptions`
+- **API Uç Noktaları:** `POST /api/auth/verify-email`, `POST /api/auth/resend-verification`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`, `GET /api/sync/status`, `GET /api/health`, `POST /api/billing/checkout`, `POST /api/billing/webhook/stripe`, `POST /api/billing/webhook/iyzico`, `GET /api/push/vapid-key`, `GET|POST|DELETE /api/push/subscriptions`
 
 ## Dokümantasyon ve Ajan Devir Dosyaları
 - [AGENTS.md](AGENTS.md): Ajan kuralları, mimari modül haritası ve doğrulama sözleşmesi

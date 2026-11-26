@@ -63,6 +63,92 @@ interface SyncRunSummary {
   newAlertsSent: number;
 }
 
+interface HealthReadinessResponse {
+  status?: string;
+  database?: {
+    mode?: string;
+    announcementsCount?: number;
+  };
+  providers?: {
+    email?: string;
+    payment?: string;
+    configuredPayments?: string[];
+    pushConfigured?: boolean;
+    cronSecretConfigured?: boolean;
+    sessionSecretConfigured?: boolean;
+  };
+}
+
+interface ReadinessChip {
+  label: string;
+  value: string;
+  tone: 'ready' | 'demo' | 'unconfigured';
+}
+
+function buildReadinessChips(health: HealthReadinessResponse | null): ReadinessChip[] {
+  if (!health) {
+    return [
+      { label: 'Veritabanı', value: 'Durum Alınamadı', tone: 'unconfigured' },
+      { label: 'E-posta', value: 'Durum Alınamadı', tone: 'unconfigured' },
+      { label: 'Ödeme', value: 'Durum Alınamadı', tone: 'unconfigured' },
+      { label: 'Web Push', value: 'Durum Alınamadı', tone: 'unconfigured' },
+    ];
+  }
+
+  const dbMode = health.database?.mode?.trim().toLowerCase() ?? '';
+  let dbChip: ReadinessChip;
+  if (dbMode === 'd1') {
+    dbChip = { label: 'Veritabanı', value: 'Hazır (D1)', tone: 'ready' };
+  } else if (dbMode === 'd1_or_memory') {
+    dbChip = { label: 'Veritabanı', value: 'Hazır (D1 / Bellek)', tone: 'ready' };
+  } else if (dbMode === 'memory') {
+    dbChip = { label: 'Veritabanı', value: 'Demo Modu (Bellek)', tone: 'demo' };
+  } else if (dbMode) {
+    dbChip = { label: 'Veritabanı', value: `Hazır (${dbMode})`, tone: 'ready' };
+  } else {
+    dbChip = { label: 'Veritabanı', value: 'Yapılandırılmadı', tone: 'unconfigured' };
+  }
+
+  const emailProvider = health.providers?.email?.trim() ?? '';
+  const emailNorm = emailProvider.toLowerCase();
+  let emailChip: ReadinessChip;
+  if (!emailNorm || emailNorm === 'noop' || emailNorm === 'no-op') {
+    emailChip = { label: 'E-posta', value: 'Yapılandırılmadı', tone: 'unconfigured' };
+  } else if (emailNorm === 'demo' || emailNorm === 'memory') {
+    emailChip = { label: 'E-posta', value: 'Demo Modu', tone: 'demo' };
+  } else {
+    emailChip = { label: 'E-posta', value: `Hazır (${emailProvider})`, tone: 'ready' };
+  }
+
+  const paymentProvider = health.providers?.payment?.trim() ?? '';
+  const paymentNorm = paymentProvider.toLowerCase();
+  let paymentChip: ReadinessChip;
+  if (!paymentNorm || paymentNorm === 'noop' || paymentNorm === 'no-op') {
+    paymentChip = { label: 'Ödeme', value: 'Yapılandırılmadı', tone: 'unconfigured' };
+  } else if (paymentNorm === 'demo') {
+    paymentChip = { label: 'Ödeme', value: 'Demo Modu', tone: 'demo' };
+  } else {
+    paymentChip = { label: 'Ödeme', value: `Hazır (${paymentProvider})`, tone: 'ready' };
+  }
+
+  const pushReady = Boolean(health.providers?.pushConfigured);
+  const pushChip: ReadinessChip = pushReady
+    ? { label: 'Web Push', value: 'Hazır', tone: 'ready' }
+    : { label: 'Web Push', value: 'Yapılandırılmadı', tone: 'unconfigured' };
+
+  return [dbChip, emailChip, paymentChip, pushChip];
+}
+
+function getChipToneClasses(tone: ReadinessChip['tone']): string {
+  if (tone === 'ready') {
+    return 'border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200';
+  }
+  if (tone === 'demo') {
+    return 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-950 dark:text-amber-100';
+  }
+  return 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200';
+}
+
 function formatSyncStatusLabel(status: string): string {
   if (status === 'success') return 'Başarılı';
   if (status === 'partial') return 'Kısmi Başarı';
@@ -89,6 +175,7 @@ export default function AyarlarPage() {
   const [verificationPreviewToken, setVerificationPreviewToken] = useState<string | null>(null);
 
   const [lastSyncRun, setLastSyncRun] = useState<SyncRunSummary | null>(null);
+  const [healthStatus, setHealthStatus] = useState<HealthReadinessResponse | null>(null);
 
   const [pushSupported, setPushSupported] = useState(false);
   const [vapidConfigured, setVapidConfigured] = useState(false);
@@ -122,8 +209,9 @@ export default function AyarlarPage() {
       fetch('/api/sync/status', { cache: 'no-store' }),
       fetch('/api/push/vapid-key', { cache: 'no-store' }).catch(() => null),
       fetch('/api/push/subscriptions', { cache: 'no-store' }).catch(() => null),
+      fetch('/api/health', { cache: 'no-store' }).catch(() => null),
     ])
-      .then(async ([prefsRes, billingRes, meRes, syncRes, vapidRes, pushSubRes]) => {
+      .then(async ([prefsRes, billingRes, meRes, syncRes, vapidRes, pushSubRes, healthRes]) => {
         if (!active) return;
         setPushSupported(supported);
         if (prefsRes.status === 401) {
@@ -186,6 +274,16 @@ export default function AyarlarPage() {
             subscriptions?: PushSubscriptionItem[];
           };
           setPushSubscriptions(Array.isArray(subData.subscriptions) ? subData.subscriptions : []);
+        }
+        if (healthRes && healthRes.ok) {
+          try {
+            const healthData = (await healthRes.json()) as HealthReadinessResponse;
+            if (healthData && (healthData.database || healthData.providers)) {
+              setHealthStatus(healthData);
+            }
+          } catch {
+            // Ignore malformed /api/health payload
+          }
         }
       })
       .catch(() => {
@@ -855,6 +953,29 @@ export default function AyarlarPage() {
                   </div>
                 </div>
               )}
+
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Sistem Altyapı Hazırlığı
+                  </h3>
+                  {!healthStatus && (
+                    <span className="text-xs text-slate-600 dark:text-slate-400">
+                      Altyapı durumu şu anda alınamadı
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs tabular-nums">
+                  {buildReadinessChips(healthStatus).map((chip) => (
+                    <div
+                      key={chip.label}
+                      className={`border px-2.5 py-1.5 font-semibold ${getChipToneClasses(chip.tone)}`}
+                    >
+                      {chip.label}: {chip.value}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </section>
 
             {/* KVKK & Account Deletion */}

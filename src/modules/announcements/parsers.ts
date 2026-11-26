@@ -76,6 +76,21 @@ function resolveUrl(href: string | null, baseUrl: string): string {
   return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
 }
 
+const RFC_MONTHS: Record<string, string> = {
+  jan: '01',
+  feb: '02',
+  mar: '03',
+  apr: '04',
+  may: '05',
+  jun: '06',
+  jul: '07',
+  aug: '08',
+  sep: '09',
+  oct: '10',
+  nov: '11',
+  dec: '12',
+};
+
 function parseDateString(raw: string | null): string | null {
   if (!raw) return null;
   const isoMatch = raw.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
@@ -88,7 +103,34 @@ function parseDateString(raw: string | null): string | null {
     const [, d, m, y] = trMatch;
     return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
+  const rfcMatch = raw.match(
+    /\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})\b/i
+  );
+  if (rfcMatch) {
+    const [, d, mon, y] = rfcMatch;
+    const m = RFC_MONTHS[mon.slice(0, 3).toLowerCase()];
+    if (m) {
+      return `${y}-${m}-${d.padStart(2, '0')}`;
+    }
+  }
   return null;
+}
+
+function splitInstitutionAndTitle(rawTitle: string): { institution: string | null; title: string } {
+  const cleaned = rawTitle.replace(/\s+/g, ' ').trim();
+  const match = cleaned.match(/^(.+?)\s+-\s+(.+)$/);
+  if (!match) return { institution: null, title: cleaned };
+  const left = match[1].trim();
+  const right = match[2].trim();
+  const looksLikeInstitution =
+    /^T\.?C\.?\b/i.test(left) ||
+    /(?:Bakanlığı|Başkanlığı|Müdürlüğü|Kurumu|Üniversitesi|Belediyesi|Valiliği|Kaymakamlığı|Enstitüsü|Komutanlığı|Akademisi|Genel\s+Sekreterliği)\b/i.test(
+      left
+    );
+  if (looksLikeInstitution && left.length >= 4 && right.length >= 4) {
+    return { institution: left, title: right };
+  }
+  return { institution: null, title: cleaned };
 }
 
 function detectCategory(text: string, defaultCategory: AnnouncementCategory): AnnouncementCategory {
@@ -255,13 +297,25 @@ function extractBlocks(html: string): string[] {
   return extractBalancedDivs(html);
 }
 
-function extractAnchor(block: string): { href: string | null; text: string | null } {
-  const m = block.match(/<a\b([^>]*)>([\s\S]*?)<\/a>/i);
-  if (!m) return { href: null, text: null };
-  return {
+function extractAnchor(block: string, preferPdf = false): { href: string | null; text: string | null } {
+  const anchors = Array.from(block.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)).map((m) => ({
     href: extractAttr(`<a ${m[1]}>`, 'href'),
     text: stripTags(m[2]) || null,
-  };
+  }));
+  if (anchors.length === 0) return { href: null, text: null };
+  if (preferPdf) {
+    const pdfAnchor = anchors.find((a) => a.href && /\.pdf(?:[?#]|$)/i.test(a.href));
+    if (pdfAnchor) {
+      const isGenericText =
+        !pdfAnchor.text || /^(?:pdf|indir|görüntüle|tıklayınız|detay|ilan)$/i.test(pdfAnchor.text);
+      const fallbackText = isGenericText
+        ? anchors.find((a) => a.text && !/^(?:pdf|indir|görüntüle|tıklayınız|detay|ilan)$/i.test(a.text))?.text ??
+          pdfAnchor.text
+        : pdfAnchor.text;
+      return { href: pdfAnchor.href, text: fallbackText };
+    }
+  }
+  return anchors[0];
 }
 
 function buildAnnouncementFromBlock(
@@ -274,7 +328,7 @@ function buildAnnouncementFromBlock(
   const meta = OFFICIAL_SOURCE_URLS[source];
   const openTagMatch = block.match(/^<([a-z0-9]+)\b([^>]*)>/i);
   const openTag = openTagMatch ? openTagMatch[0] : '';
-  const anchor = extractAnchor(block);
+  const anchor = extractAnchor(block, source === 'resmi_gazete');
 
   const fullText = stripTags(block);
   if (!fullText || fullText.length < 12) return null;
@@ -293,7 +347,7 @@ function buildAnnouncementFromBlock(
     extractByClassOrTag(block, ['institution', 'kurum', 'agency', 'ministry']) ||
     '';
   let title =
-    extractByClassOrTag(block, ['title', 'baslik', 'ilan-baslik', 'position', 'subject']) ||
+    extractByClassOrTag(block, ['title', 'baslik', 'ilan-baslik', 'fihrist-title', 'position', 'subject']) ||
     anchor.text ||
     '';
 
@@ -306,13 +360,21 @@ function buildAnnouncementFromBlock(
     }
   }
 
+  if (!title) {
+    title = fullText.slice(0, 120);
+  }
+
+  if (!institution && title) {
+    const split = splitInstitutionAndTitle(title);
+    if (split.institution) {
+      institution = split.institution;
+      title = split.title;
+    }
+  }
+
   if (!institution) {
     const kurumMatch = fullText.match(/(?:Kurum|Bakanlık|Belediye|Üniversite)\s*[:\-]\s*([^|\n.;]{3,90})/i);
     institution = kurumMatch ? kurumMatch[1].trim() : meta.name;
-  }
-
-  if (!title) {
-    title = fullText.slice(0, 120);
   }
 
   if (!title || title.length < 4) return null;
@@ -377,6 +439,315 @@ function buildAnnouncementFromBlock(
   };
 }
 
+function isJobPostingType(rawType: unknown): boolean {
+  if (typeof rawType === 'string') {
+    return rawType === 'JobPosting' || rawType.endsWith('/JobPosting');
+  }
+  if (Array.isArray(rawType)) {
+    return rawType.some((entry) => isJobPostingType(entry));
+  }
+  return false;
+}
+
+function collectJobPostings(node: unknown, out: Record<string, unknown>[]): void {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      collectJobPostings(item, out);
+    }
+    return;
+  }
+  const obj = node as Record<string, unknown>;
+  if (isJobPostingType(obj['@type'])) {
+    out.push(obj);
+  }
+  if (Array.isArray(obj['@graph'])) {
+    collectJobPostings(obj['@graph'], out);
+  }
+}
+
+function extractHiringOrgName(rawOrg: unknown): string {
+  if (typeof rawOrg === 'string') return stripTags(rawOrg);
+  if (Array.isArray(rawOrg)) {
+    for (const entry of rawOrg) {
+      const name = extractHiringOrgName(entry);
+      if (name) return name;
+    }
+    return '';
+  }
+  if (rawOrg && typeof rawOrg === 'object') {
+    const name = (rawOrg as Record<string, unknown>).name;
+    if (typeof name === 'string') return stripTags(name);
+  }
+  return '';
+}
+
+function extractJobLocationCity(rawLoc: unknown): string {
+  if (!rawLoc) return '';
+  if (typeof rawLoc === 'string') return stripTags(rawLoc);
+  if (Array.isArray(rawLoc)) {
+    for (const entry of rawLoc) {
+      const city = extractJobLocationCity(entry);
+      if (city) return city;
+    }
+    return '';
+  }
+  if (typeof rawLoc === 'object') {
+    const loc = rawLoc as Record<string, unknown>;
+    if (typeof loc.address === 'string') return stripTags(loc.address);
+    if (loc.address && typeof loc.address === 'object') {
+      const addr = loc.address as Record<string, unknown>;
+      const locality =
+        (typeof addr.addressLocality === 'string' && addr.addressLocality) ||
+        (typeof addr.addressRegion === 'string' && addr.addressRegion) ||
+        '';
+      if (locality) return stripTags(locality);
+    }
+    if (typeof loc.name === 'string') return stripTags(loc.name);
+  }
+  return '';
+}
+
+function extractJsonLdJobPostings(
+  html: string,
+  source: Exclude<AnnouncementSource, 'osym_kpss'>,
+  defaultCategory: AnnouncementCategory,
+  referenceDate?: string
+): Announcement[] {
+  const meta = OFFICIAL_SOURCE_URLS[source];
+  const scriptRegex = /<script\b[^>]*type\s*=\s*["'][^"']*application\/ld\+json[^"']*["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const postings: Record<string, unknown>[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = scriptRegex.exec(html)) !== null) {
+    const rawJson = match[1]?.trim();
+    if (!rawJson) continue;
+    try {
+      const parsed = JSON.parse(rawJson) as unknown;
+      collectJobPostings(parsed, postings);
+    } catch {
+      // Ignore malformed JSON-LD script blocks safely
+    }
+  }
+
+  if (postings.length === 0) return [];
+
+  const results: Announcement[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < postings.length; i++) {
+    const node = postings[i];
+    const rawTitle =
+      typeof node.title === 'string'
+        ? stripTags(node.title)
+        : typeof node.name === 'string'
+          ? stripTags(node.name)
+          : '';
+    if (!rawTitle || rawTitle.length < 4) continue;
+
+    let title = rawTitle;
+    let institution = extractHiringOrgName(node.hiringOrganization);
+    if (!institution) {
+      const split = splitInstitutionAndTitle(title);
+      if (split.institution) {
+        institution = split.institution;
+        title = split.title;
+      } else {
+        institution = meta.name;
+      }
+    }
+
+    const rawCity = extractJobLocationCity(node.jobLocation) || 'TÜRKİYE GENELİ';
+    const city = toTurkishUpper(rawCity);
+
+    const publishedAt =
+      parseDateString(typeof node.datePosted === 'string' ? node.datePosted : null) || '2026-11-26';
+    const deadlineAt =
+      parseDateString(typeof node.validThrough === 'string' ? node.validThrough : null) || publishedAt;
+
+    const rawDescription = typeof node.description === 'string' ? stripTags(node.description) : '';
+    const summary = (rawDescription || title).slice(0, 220);
+    const fullText = `${title} ${rawDescription}`;
+
+    const rawUrl = typeof node.url === 'string' ? node.url : null;
+    const sourceUrl = resolveUrl(rawUrl, meta.url);
+
+    let rawIdentifier: string | null = null;
+    if (typeof node.identifier === 'string') {
+      rawIdentifier = node.identifier.trim() || null;
+    } else if (node.identifier && typeof node.identifier === 'object') {
+      const val = (node.identifier as Record<string, unknown>).value;
+      if (typeof val === 'string' && val.trim()) rawIdentifier = val.trim();
+    }
+
+    const externalId =
+      rawIdentifier || `${source.toUpperCase()}-${hashSlug(`${institution}|${title}|${deadlineAt}`)}-${i + 1}`;
+    const id = `${source}-${externalId}`.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const quota =
+      typeof node.totalJobOpenings === 'number' && Number.isFinite(node.totalJobOpenings) && node.totalJobOpenings > 0
+        ? node.totalJobOpenings
+        : extractQuota(fullText);
+
+    const category = detectCategory(fullText, defaultCategory);
+    const criteria = extractCriteriaFromText(fullText, city);
+
+    results.push({
+      id,
+      externalId,
+      source,
+      sourceName: meta.name,
+      sourceUrl,
+      institution: institution.trim(),
+      title: title.trim(),
+      category,
+      city,
+      status: computeStatus(deadlineAt, referenceDate),
+      publishedAt,
+      deadlineAt,
+      quota,
+      summary,
+      criteria,
+    });
+  }
+
+  return results;
+}
+
+function unwrapCdata(raw: string): string {
+  return raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+}
+
+function extractXmlTagText(block: string, tagNames: string[]): string | null {
+  for (const tag of tagNames) {
+    const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`<${escaped}\\b[^>]*>([\\s\\S]*?)<\\/${escaped}>`, 'i');
+    const match = block.match(regex);
+    if (match && match[1]) {
+      const cleaned = stripTags(unwrapCdata(match[1]));
+      if (cleaned) return cleaned;
+    }
+  }
+  return null;
+}
+
+function extractFeedLink(block: string): string | null {
+  const hrefMatch = block.match(/<link\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*\/?>/i);
+  if (hrefMatch && hrefMatch[1]) {
+    return decodeHtmlEntities(hrefMatch[1]).trim() || null;
+  }
+  return extractXmlTagText(block, ['link']);
+}
+
+function extractFeedCategories(block: string): string {
+  const values: string[] = [];
+  const catRegex = /<category\b([^>]*)>([\s\S]*?)<\/category>|<category\b([^>]*)\/>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = catRegex.exec(block)) !== null) {
+    const attrs = m[1] || m[3] || '';
+    const term = extractAttr(`<category ${attrs}>`, 'term');
+    if (term) values.push(term);
+    if (m[2]) {
+      const text = stripTags(unwrapCdata(m[2]));
+      if (text) values.push(text);
+    }
+  }
+  return values.join(' ');
+}
+
+function extractFeedAnnouncements(
+  xml: string,
+  source: Exclude<AnnouncementSource, 'osym_kpss'>,
+  defaultCategory: AnnouncementCategory,
+  referenceDate?: string
+): Announcement[] {
+  const meta = OFFICIAL_SOURCE_URLS[source];
+  const entries =
+    xml.match(/<item\b[^>]*>[\s\S]*?<\/item>/gi) ??
+    xml.match(/<entry\b[^>]*>[\s\S]*?<\/entry>/gi) ??
+    [];
+  if (entries.length === 0) return [];
+
+  const results: Announcement[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const rawTitle = extractXmlTagText(entry, ['title']);
+    if (!rawTitle || rawTitle.length < 4) continue;
+
+    let title = rawTitle;
+    let institution = extractXmlTagText(entry, ['author', 'dc:creator']) || '';
+    if (!institution) {
+      const split = splitInstitutionAndTitle(title);
+      if (split.institution) {
+        institution = split.institution;
+        title = split.title;
+      }
+    }
+
+    const description = extractXmlTagText(entry, ['description', 'summary', 'content']) || '';
+    const categoryText = extractFeedCategories(entry);
+    const fullText = `${title} ${description} ${categoryText}`.trim();
+
+    if (!institution) {
+      const kurumMatch = fullText.match(/(?:Kurum|Bakanlık|Belediye|Üniversite)\s*[:\-]\s*([^|\n.;]{3,90})/i);
+      institution = kurumMatch ? kurumMatch[1].trim() : meta.name;
+    }
+
+    const pubRaw = extractXmlTagText(entry, ['pubDate', 'published', 'updated', 'dc:date']);
+    const dateMatches = Array.from(fullText.matchAll(/(\d{4}-\d{2}-\d{2}|\d{1,2}[./]\d{1,2}[./]\d{4})/g))
+      .map((m) => parseDateString(m[1]))
+      .filter((d): d is string => Boolean(d));
+
+    const publishedAt = parseDateString(pubRaw) || dateMatches[0] || '2026-11-26';
+    const deadlineFromText = dateMatches.length > 0 ? dateMatches[dateMatches.length - 1] : null;
+    const deadlineAt = deadlineFromText && deadlineFromText >= publishedAt ? deadlineFromText : publishedAt;
+
+    const cityRaw =
+      fullText.match(/(?:Şehir|İl|Yer)\s*[:\-]\s*([A-ZÇĞİÖŞÜa-zçğıöşü\s]{2,30})/i)?.[1] ||
+      'TÜRKİYE GENELİ';
+    const city = toTurkishUpper(cityRaw);
+
+    const link = extractFeedLink(entry);
+    const guid = extractXmlTagText(entry, ['guid', 'id']);
+    const safeGuid = guid && !/^https?:\/\//i.test(guid) ? guid : null;
+
+    const externalId =
+      safeGuid || `${source.toUpperCase()}-${hashSlug(`${institution}|${title}|${deadlineAt}`)}-${i + 1}`;
+    const id = `${source}-${externalId}`.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const summary = (description || title).slice(0, 220);
+    const quota = extractQuota(fullText);
+    const category = detectCategory(`${categoryText} ${title} ${description}`, defaultCategory);
+    const criteria = extractCriteriaFromText(fullText, city);
+
+    results.push({
+      id,
+      externalId,
+      source,
+      sourceName: meta.name,
+      sourceUrl: resolveUrl(link, meta.url),
+      institution: institution.trim(),
+      title: title.trim(),
+      category,
+      city,
+      status: computeStatus(deadlineAt, referenceDate),
+      publishedAt,
+      deadlineAt,
+      quota,
+      summary,
+      criteria,
+    });
+  }
+
+  return results;
+}
+
 function parseSourceHtml(
   html: string,
   source: Exclude<AnnouncementSource, 'osym_kpss'>,
@@ -385,7 +756,17 @@ function parseSourceHtml(
 ): Announcement[] {
   if (!html || typeof html !== 'string') return [];
 
-  const rawBlocks = extractBlocks(html);
+  const jsonLdResults = extractJsonLdJobPostings(html, source, defaultCategory, referenceDate);
+  if (jsonLdResults.length > 0) {
+    return jsonLdResults;
+  }
+
+  const isXmlFeed = /<(?:rss|feed|rdf:RDF)\b/i.test(html);
+  const rawBlocks = isXmlFeed ? [] : extractBlocks(html);
+  if (rawBlocks.length === 0) {
+    return extractFeedAnnouncements(html, source, defaultCategory, referenceDate);
+  }
+
   const results: Announcement[] = [];
   const seen = new Set<string>();
 
@@ -462,7 +843,8 @@ export async function fetchOfficialAnnouncements(
           method: 'GET',
           signal: controller.signal,
           headers: {
-            Accept: 'text/html,application/xhtml+xml',
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9',
+            'User-Agent': 'KamuBildirimSepeti/1.0 (+https://kamubildirimsepeti.example)',
           },
         });
         if (!res.ok) {
