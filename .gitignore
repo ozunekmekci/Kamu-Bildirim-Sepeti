@@ -1,5 +1,6 @@
-# Internal agent state
-.agents/
+# Internal agent state (track reusable workspace skills)
+.agents/*
+!.agents/skills/
 
 # Dependencies
 node_modules/

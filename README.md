@@ -92,7 +92,9 @@ npm run deploy
 - **API Uç Noktaları:** `POST /api/auth/verify-email`, `POST /api/auth/resend-verification`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`, `GET /api/sync/status`, `GET /api/health`, `POST /api/billing/checkout`, `POST /api/billing/webhook/stripe`, `POST /api/billing/webhook/iyzico`, `GET /api/push/vapid-key`, `GET|POST|DELETE /api/push/subscriptions`
 
 ## Dokümantasyon ve Ajan Devir Dosyaları
+- [HANDOFF.md](HANDOFF.md): Yeni oturum / farklı AI ajanları için 30 saniyelik aktif durum, kararlar ve sonraki adımlar devir özeti
+- [.agents/skills/github-handoff/SKILL.md](.agents/skills/github-handoff/SKILL.md): Repo-içi GitHub handoff ve resume ajan yeteneği (`github-handoff`)
 - [AGENTS.md](AGENTS.md): Ajan kuralları, mimari modül haritası ve doğrulama sözleşmesi
-- [docs/PROGRESS.md](docs/PROGRESS.md): Canlı ilerleme ve devir defteri
-- [docs/ROADMAP.md](docs/ROADMAP.md): 3 fazlı ürün ve altyapı yol haritası
+- [docs/PROGRESS.md](docs/PROGRESS.md): Canlı ilerleme ve faz bazlı devir defteri
+- [docs/ROADMAP.md](docs/ROADMAP.md): Faz 1-5 ürün ve altyapı yol haritası
 - [docs/superpowers/specs/2026-11-26-kamu-bildirim-sepeti-design.md](docs/superpowers/specs/2026-11-26-kamu-bildirim-sepeti-design.md): Faz 1 mimari ve ürün tasarım dokümanı

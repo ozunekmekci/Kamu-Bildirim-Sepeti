@@ -11,10 +11,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 # Kamu Bildirim Sepeti - Agent Guide
 
 ## 30-Second Agent Resume Checklist
-1. Read `docs/PROGRESS.md` and run `git log -n 5` to see the latest completed milestone and handoff state.
-2. Read `docs/ROADMAP.md` to confirm phase scope and priorities.
-3. Run `npm test && npm run lint` to verify baseline health before making changes.
-4. Pick the next unchecked (`[ ]`) item in `docs/PROGRESS.md`.
+1. Read `HANDOFF.md` and `.agents/skills/github-handoff/SKILL.md` (repo-level handoff protocol).
+2. Read `docs/PROGRESS.md` and run `git log -n 5` to see the latest completed milestone and handoff state.
+3. Read `docs/ROADMAP.md` to confirm phase scope and priorities.
+4. Run `npm test && npm run lint` to verify baseline health before making changes.
+5. Pick the next unchecked (`[ ]`) item in `HANDOFF.md` / `docs/PROGRESS.md`. When finishing work, update `HANDOFF.md` + `docs/PROGRESS.md`, verify `npm test && npm run lint && npm run build && npm run build:worker`, commit cleanly, and push to `origin/main`.
 
 ## Product & Hard Rules
 - **Brand:** ONLY **Kamu Bildirim Sepeti**. Never reference or introduce any competing third-party app name anywhere in code, comments, tests, or docs.
