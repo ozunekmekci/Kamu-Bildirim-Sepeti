@@ -2,6 +2,8 @@
 
 **Kamu Bildirim Sepeti**, kamu kurumları tarafından yayımlanan **atama**, **personel alımı** ve **görevlendirme** ilanlarını tek merkezden takip etmeyi, aday profiline göre uygunluk eşleştirmesi yapmayı ve son başvuru takibini kolaylaştıran bir SaaS platformudur.
 
+- **Canlı Dağıtım (Cloudflare Workers + D1):** https://kpssportal.ozunekmekci.workers.dev (`0 */6 * * *` otomatik Cron senkronizasyonu aktif)
+
 ## Resmî Kaynaklar ve Kapsam
 Platform aşağıdaki resmî kamu kaynaklarından derlenen ilan yapılarını ve mevcut KPSS yerleştirme arşivini bir araya getirir:
 - **Kariyer Kapısı:** https://kariyerkapisi.gov.tr
@@ -55,7 +57,7 @@ Manuel adımlar:
 ```bash
 npx wrangler d1 create kamu_bildirim_sepeti
 ```
-2. Çıktıdaki `database_id` değerini `wrangler.jsonc` içindeki `REPLACE_WITH_D1_DATABASE_ID` alanına yazın.
+2. Çıktıdaki `database_id` değerini `wrangler.jsonc` içindeki `d1_databases[0].database_id` alanına yazın (mevcut canlı kurulum ID'si `37ec183a-11be-4a6c-b0fd-caa2039677f7`).
 3. Şema migrasyonlarını (`0001_init.sql`, `0002_phase2.sql` ve `0003_phase3.sql`) uygulayın:
 ```bash
 npx wrangler d1 migrations apply kamu_bildirim_sepeti --local

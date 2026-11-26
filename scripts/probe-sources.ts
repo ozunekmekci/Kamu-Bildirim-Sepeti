@@ -154,15 +154,16 @@ export async function probeSingleSource(
     };
   }
 
+  const targetUrl = (meta as { feedUrl?: string }).feedUrl ?? meta.url;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetchFn(meta.url, {
+    const res = await fetchFn(targetUrl, {
       method: 'GET',
       signal: controller.signal,
       headers: {
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Accept: 'application/rss+xml, application/xml, text/xml, text/html, application/xhtml+xml;q=0.9, */*;q=0.8',
         'User-Agent': USER_AGENT,
       },
     });
@@ -175,7 +176,7 @@ export async function probeSingleSource(
       return {
         source,
         sourceName: meta.name,
-        url: meta.url,
+        url: targetUrl,
         mode: 'live',
         status: res.status,
         contentType,
@@ -192,7 +193,7 @@ export async function probeSingleSource(
     return {
       source,
       sourceName: meta.name,
-      url: meta.url,
+      url: targetUrl,
       mode: 'live',
       status: res.status,
       contentType,
@@ -215,7 +216,7 @@ export async function probeSingleSource(
     return {
       source,
       sourceName: meta.name,
-      url: meta.url,
+      url: targetUrl,
       mode: 'live',
       status: null,
       contentType: null,

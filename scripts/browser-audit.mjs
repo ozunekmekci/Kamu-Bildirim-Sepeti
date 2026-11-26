@@ -535,6 +535,12 @@ async function main() {
         for (const route of MATRIX_ROUTES) {
           await page.setTheme(theme);
           await page.goto(route, { waitMs: 550 });
+          if (route === '/kpss-arsivi') {
+            await page.waitForCondition(
+              "() => document.body.innerText.includes('Hızlı Kadro Arama')",
+              8000
+            );
+          }
           await page.setTheme(theme);
 
           const metrics = await page.eval(`(() => ({
@@ -637,6 +643,10 @@ async function main() {
     // 6. Interactive Check 4 (before auth): On `/kpss-arsivi`, search `3011` and assert matching rows appear
     console.log('[audit] R-35 Check 4: /kpss-arsivi search 3011...');
     await page.goto('/kpss-arsivi', { waitMs: 600 });
+    await page.waitForCondition(
+      "() => document.body.innerText.includes('Hızlı Kadro Arama')",
+      8000
+    );
     const kpssResult = await page.eval(`(async () => {
       // Switch to Hızlı Kadro Arama mode and search 3011
       const buttons = Array.from(document.querySelectorAll('button'));

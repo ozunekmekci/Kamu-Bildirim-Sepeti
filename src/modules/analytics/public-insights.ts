@@ -128,16 +128,32 @@ const SOURCE_CONFIG: Record<
   },
 };
 
+const CITY_CACHE_MAX = 512;
+const citySlugCache = new Map<string, string>();
+const canonicalCityCache = new Map<string, string>();
+
 /**
  * Converts a Turkish city name into an ASCII URL slug using Turkish search normalization.
  */
 export function slugifyTurkishCity(city: string): string {
-  return normalizeTrSearch(city).replace(/\s+/g, '-');
+  const cached = citySlugCache.get(city);
+  if (cached !== undefined) return cached;
+  const computed = normalizeTrSearch(city).replace(/\s+/g, '-');
+  if (citySlugCache.size < CITY_CACHE_MAX) {
+    citySlugCache.set(city, computed);
+  }
+  return computed;
 }
 
 function canonicalizeCityName(rawCity: string): string {
+  const cached = canonicalCityCache.get(rawCity);
+  if (cached !== undefined) return cached;
   const withoutParens = rawCity.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
-  return withoutParens ? toTurkishUpper(withoutParens) : '';
+  const computed = withoutParens ? toTurkishUpper(withoutParens) : '';
+  if (canonicalCityCache.size < CITY_CACHE_MAX) {
+    canonicalCityCache.set(rawCity, computed);
+  }
+  return computed;
 }
 
 function isGenericNationalCity(city: string): boolean {
@@ -415,6 +431,43 @@ export function getCitySeoCatalog(
     });
 }
 
+interface CityArchiveBucket {
+  city: string;
+  records: PlacementRecord[];
+  archiveQuota: number;
+  scores: number[];
+  topInstitutions?: InstitutionInsight[];
+}
+
+const cityArchiveIndexCache = new WeakMap<PlacementRecord[], Map<string, CityArchiveBucket>>();
+
+function getCityArchiveIndex(records: PlacementRecord[]): Map<string, CityArchiveBucket> {
+  const cached = cityArchiveIndexCache.get(records);
+  if (cached) return cached;
+
+  const index = new Map<string, CityArchiveBucket>();
+  for (const record of records) {
+    const canonical = canonicalizeCityName(record.sehir);
+    if (!canonical || isGenericNationalCity(canonical)) continue;
+    const slug = slugifyTurkishCity(canonical);
+    if (!slug || slug === 'turkiye-geneli' || slug === 'merkez') continue;
+
+    let bucket = index.get(slug);
+    if (!bucket) {
+      bucket = { city: canonical, records: [], archiveQuota: 0, scores: [] };
+      index.set(slug, bucket);
+    }
+    bucket.records.push(record);
+    bucket.archiveQuota += record.kontenjan || 0;
+    if (record.tabanPuan !== null && !Number.isNaN(record.tabanPuan)) {
+      bucket.scores.push(record.tabanPuan);
+    }
+  }
+
+  cityArchiveIndexCache.set(records, index);
+  return index;
+}
+
 /**
  * Resolves city landing page data for a normalized Turkish city slug.
  */
@@ -428,18 +481,10 @@ export function getCityLandingData(
     return null;
   }
 
-  const cityRecords = records.filter((record) => {
-    const canonical = canonicalizeCityName(record.sehir);
-    return canonical && slugifyTurkishCity(canonical) === targetSlug;
-  });
-
+  const archiveBucket = getCityArchiveIndex(records).get(targetSlug);
   const cityAnnouncements: Announcement[] = [];
   const nationalAnnouncements: Announcement[] = [];
-  let matchedCityLabel: string | null = null;
-
-  if (cityRecords.length > 0) {
-    matchedCityLabel = canonicalizeCityName(cityRecords[0].sehir);
-  }
+  let matchedCityLabel: string | null = archiveBucket ? archiveBucket.city : null;
 
   for (const item of allAnnouncements) {
     const rawCities = [item.city, ...(item.criteria?.cities ?? [])];
@@ -470,13 +515,21 @@ export function getCityLandingData(
     return null;
   }
 
-  let archiveQuota = 0;
-  const scores: number[] = [];
-  for (const record of cityRecords) {
-    archiveQuota += record.kontenjan || 0;
-    if (record.tabanPuan !== null && !Number.isNaN(record.tabanPuan)) {
-      scores.push(record.tabanPuan);
-    }
+  if (!archiveBucket) {
+    return {
+      slug: targetSlug,
+      city: matchedCityLabel,
+      announcements: sortAnnouncementsForDisplay(cityAnnouncements),
+      nationalAnnouncements: sortAnnouncementsForDisplay(nationalAnnouncements),
+      archivePostsCount: 0,
+      archiveQuota: 0,
+      avgMinScore: null,
+      topInstitutions: [],
+    };
+  }
+
+  if (!archiveBucket.topInstitutions) {
+    archiveBucket.topInstitutions = buildInstitutionInsights(archiveBucket.records, 10);
   }
 
   return {
@@ -484,10 +537,10 @@ export function getCityLandingData(
     city: matchedCityLabel,
     announcements: sortAnnouncementsForDisplay(cityAnnouncements),
     nationalAnnouncements: sortAnnouncementsForDisplay(nationalAnnouncements),
-    archivePostsCount: cityRecords.length,
-    archiveQuota,
-    avgMinScore: computeAverageScore(scores),
-    topInstitutions: buildInstitutionInsights(cityRecords, 10),
+    archivePostsCount: archiveBucket.records.length,
+    archiveQuota: archiveBucket.archiveQuota,
+    avgMinScore: computeAverageScore(archiveBucket.scores),
+    topInstitutions: archiveBucket.topInstitutions,
   };
 }
 

@@ -11,11 +11,12 @@ import {
 
 export const OFFICIAL_SOURCE_URLS: Record<
   Exclude<AnnouncementSource, 'osym_kpss'>,
-  { name: string; url: string }
+  { name: string; url: string; feedUrl?: string }
 > = {
   kariyer_kapisi: {
     name: 'Kariyer Kapısı',
     url: 'https://kariyerkapisi.gov.tr',
+    feedUrl: 'https://kariyerkapisi.gov.tr/RSS',
   },
   iskur: {
     name: 'İŞKUR',
@@ -128,10 +129,11 @@ function splitInstitutionAndTitle(rawTitle: string): { institution: string | nul
   if (!match) return { institution: null, title: cleaned };
   const left = match[1].trim();
   const right = match[2].trim();
+  const normLeft = normalizeTrSearch(left);
   const looksLikeInstitution =
-    /^T\.?C\.?\b/i.test(left) ||
-    /(?:Bakanlığı|Başkanlığı|Müdürlüğü|Kurumu|Üniversitesi|Belediyesi|Valiliği|Kaymakamlığı|Enstitüsü|Komutanlığı|Akademisi|Genel\s+Sekreterliği)\b/i.test(
-      left
+    /^t\.?c\.?\b/.test(normLeft) ||
+    /(?:bakanligi|baskanligi|mudurlugu|rektorlugu|dekanligi|kurumu|universitesi|belediyesi|valiligi|kaymakamligi|enstitusu|komutanligi|akademisi|genel\s+sekreterligi|ajansi|hastanesi|bankasi)\b/.test(
+      normLeft
     );
   if (looksLikeInstitution && left.length >= 4 && right.length >= 4) {
     return { institution: left, title: right };
@@ -769,7 +771,10 @@ function extractFeedAnnouncements(
 
     const link = extractFeedLink(entry);
     const guid = extractXmlTagText(entry, ['guid', 'id']);
-    const safeGuid = guid && !/^https?:\/\//i.test(guid) ? guid : null;
+    const queryIdMatch = (link || guid || '').match(/[?&]i=([a-zA-Z0-9-]{8,64})/);
+    const safeGuid =
+      (queryIdMatch ? `${source.toUpperCase()}-${queryIdMatch[1]}` : null) ??
+      (guid && !/^https?:\/\//i.test(guid) ? guid : null);
 
     const externalId =
       safeGuid || `${source.toUpperCase()}-${hashSlug(`${institution}|${title}|${deadlineAt}`)}-${i + 1}`;
@@ -875,7 +880,7 @@ export async function fetchOfficialAnnouncements(
 
   const sources = Object.entries(OFFICIAL_SOURCE_URLS) as [
     Exclude<AnnouncementSource, 'osym_kpss'>,
-    { name: string; url: string }
+    { name: string; url: string; feedUrl?: string }
   ][];
 
   if (!fetchFn) {
@@ -883,7 +888,7 @@ export async function fetchOfficialAnnouncements(
       errors.push({
         source,
         sourceName: meta.name,
-        url: meta.url,
+        url: meta.feedUrl ?? meta.url,
         message: 'Fetch istemcisi kullanılabilir değil.',
       });
     }
@@ -892,14 +897,15 @@ export async function fetchOfficialAnnouncements(
 
   await Promise.all(
     sources.map(async ([source, meta]) => {
+      const targetUrl = meta.feedUrl ?? meta.url;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const res = await fetchFn(meta.url, {
+        const res = await fetchFn(targetUrl, {
           method: 'GET',
           signal: controller.signal,
           headers: {
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9',
+            Accept: 'application/rss+xml, application/xml, text/xml, text/html, application/xhtml+xml;q=0.9',
             'User-Agent': 'KamuBildirimSepeti/1.0 (+https://kamubildirimsepeti.example)',
           },
         });
@@ -907,7 +913,7 @@ export async function fetchOfficialAnnouncements(
           errors.push({
             source,
             sourceName: meta.name,
-            url: meta.url,
+            url: targetUrl,
             message: `HTTP ${res.status} yanıtı alındı.`,
           });
           return;
@@ -930,7 +936,7 @@ export async function fetchOfficialAnnouncements(
         errors.push({
           source,
           sourceName: meta.name,
-          url: meta.url,
+          url: targetUrl,
           message,
         });
       } finally {

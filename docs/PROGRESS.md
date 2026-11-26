@@ -1,7 +1,18 @@
 # Kamu Bildirim Sepeti - İlerleme ve Devir Defteri
 
 **Son Güncelleme:** 2026-11-26  
-**Aktif Faz:** Faz 5 (Cloudflare Cron `scheduled()` Giriş Noktası, Canlı Kaynak Probu ve Gerçek Tarayıcı Doğrulaması)
+**Aktif Faz:** Faz 6 (Kariyer Kapısı Canlı RSS, Worker CPU 1102 Çözümü ve Canlı Cloudflare D1/Workers Dağıtımı - Tamamlandı)
+
+## Faz 6 Tamamlananlar
+- [x] **Kariyer Kapısı Resmî RSS Entegrasyonu (`src/modules/announcements/parsers.ts`, `scripts/probe-sources.ts`, `tests/phase6-kariyer-rss.test.ts`):** `OFFICIAL_SOURCE_URLS.kariyer_kapisi.feedUrl = 'https://kariyerkapisi.gov.tr/RSS'` tanımlandı; `splitInstitutionAndTitle` Türkçe büyük/küçük harf (`normalizeTrSearch`) ve üniversite/komutanlık kurum ekleri ile güncellendi; `IlanDetay?i=<uuid>` kalıcı ID çıkarımı eklendi (`npm run probe:sources`: toplam `53` canlı ilan = Kariyer Kapısı `25` + İŞKUR `12` + Resmî Gazete `16`).
+- [x] **Canlı Cloudflare D1, Gizli Anahtarlar ve Workers Dağıtımı (`wrangler.jsonc`):** `kamu_bildirim_sepeti` D1 veritabanı (`37ec183a-11be-4a6c-b0fd-caa2039677f7`, `EEUR`) oluşturuldu; `0001_init.sql`, `0002_phase2.sql`, `0003_phase3.sql` uzak migrasyonları uygulandı; 8 gizli anahtar (`SESSION_SECRET`, `CRON_SECRET`, `VAPID_*`, `NEXT_PUBLIC_SITE_URL`, `PAYMENT_PROVIDER`) `wrangler secret bulk` ile yüklendi ve ilk canlı `POST /api/cron/sync` çalıştırılarak `53` canlı ilan üretim D1'e yazıldı (`total = 77`).
+- [x] **Cloudflare Worker 10ms CPU (Error 1102) Optimizasyonu (`src/modules/analytics/public-insights.ts`, `src/components/KpssArchiveLoader.tsx`, `src/app/kpss-arsivi/page.tsx`, `scripts/browser-audit.mjs`):** `canonicalizeCityName`/`slugifyTurkishCity` için sınırlı memoizasyon ve `WeakMap` şehir indeksi eklendi; `/kpss-arsivi` 9.703 kayıtlık arama motoru `KpssArchiveLoader` (`next/dynamic` `ssr: false`) ile tarayıcıya alınarak Worker SSR'deki `656.81 ms` senkron indeksleme kaldırıldı (paket boyutu `33,312 KiB` -> `28,451 KiB`, başlangıç `15 ms`, tüm canlı sayfalar HTTP 200).
+
+## Doğrulama Özeti (Faz 6 Son Doğrulama)
+- [x] Canlı Workers URL (`https://kpssportal.ozunekmekci.workers.dev`, Version `c6fd9845-5e34-4987-9163-16fed3f80baf`): `/api/health` (`mode: "d1"`, `announcementsCount: 77`, `pushConfigured: true`, `cronSecretConfigured: true`, `sessionSecretConfigured: true`), `/api/announcements` (`total=77`), `/`, `/analiz`, `/kpss-arsivi`, `/sehir/ankara`, `/sehir/istanbul`, `/sehir/izmir`, `/kaynak/kariyer-kapisi`, `/ayarlar`, `/profil` -> hepsi **HTTP 200**
+- [x] `npm test`: **31/31 test dosyası, 347/347 test geçti (`9.09s`, `EXIT=0`)**
+- [x] `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run deploy`: **EXIT=0**
+- [x] `node scripts/browser-audit.mjs`: **`[AUDIT PASSED]`** (14 rota, 20/20 Masaüstü/Mobil Açık/Koyu matris 0 taşma, 5/5 R-35 etkileşim geçti)
 
 ## Faz 5 Tamamlananlar
 - [x] **Cloudflare Cron `scheduled()` Worker Sarmalayıcısı (`custom-worker.mjs`, `src/modules/worker/scheduled.ts`, `wrangler.jsonc`):** OpenNext çıktı worker'ının yalnızca `fetch()` dışa aktarması nedeniyle `0 */6 * * *` cron tetikleyicisinin üretimde sessiz kalmasını önleyen özel giriş noktası eklendi (`DOQueueHandler`, `DOShardedTagCache`, `BucketCachePurge` yeniden ihracı + `ctx.waitUntil` içinde `POST /api/cron/sync` çağrısı, `Authorization: Bearer` ve `x-cron-trigger: cloudflare_cron` / `cf-cron` başlıkları, gizli anahtar sızdırmayan güvenli hata kaydı); `tests/phase5-worker-cron.test.ts` (6 test) ve `npx wrangler deploy --dry-run` paket doğrulaması geçti.
@@ -98,6 +109,6 @@
    - Ödeme sağlayıcıları: `PAYMENT_PROVIDER` (`demo` | `stripe` | `iyzico`), `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `IYZICO_API_KEY`, `IYZICO_SECRET_KEY`, `IYZICO_BASE_URL`
    - Web Push (VAPID): `VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
 
-## Sıradaki Başlangıç Adımı (Canlı Kurulum ve Dağıtım)
-- [ ] Harici Cloudflare oturumu ve canlı dağıtım: `npx wrangler login`, `bash scripts/setup-cloudflare.sh --generate-vapid`, `bash scripts/setup-cloudflare.sh --execute`, tüm üretim gizli değişkenlerinin (`SESSION_SECRET`, `CRON_SECRET`, e-posta/ödeme/VAPID anahtarları ve `VAPID_SUBJECT`) tanımlanması, `npm run deploy` ve canlı alanda `POST /api/cron/sync` + `npm run probe:sources` kontrolü.
-- [ ] (İsteğe bağlı sonraki sprint) Kariyer Kapısı canlı liste uç noktası JS-rendered kabuk arkasındaki XHR/API sözleşmesinin incelenmesi ve eklenmesi.
+## Sıradaki Başlangıç Adımı (Canlı Operasyon ve Opsiyonel İyileştirmeler)
+- [x] Harici Cloudflare D1 (`37ec183a-11be-4a6c-b0fd-caa2039677f7`), `0001..0003` uzak migrasyonlar, üretim gizli değişkenleri, canlı dağıtım (`https://kpssportal.ozunekmekci.workers.dev`) ve ilk canlı `POST /api/cron/sync` (`53` canlı ilan) tamamlandı.
+- [ ] Opsiyonel canlı entegrasyon anahtarlarını ekle: `RESEND_API_KEY`/`MAILCHANNELS_API_KEY`, `STRIPE_*`/`IYZICO_*`, özel alan adı (`NEXT_PUBLIC_SITE_URL`) ve Kariyer Kapısı ilan detay/son tarih zenginleştirmesi.

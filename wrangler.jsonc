@@ -23,7 +23,7 @@
     {
       "binding": "DB",
       "database_name": "kamu_bildirim_sepeti",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "37ec183a-11be-4a6c-b0fd-caa2039677f7",
       "migrations_dir": "migrations"
     }
   ],

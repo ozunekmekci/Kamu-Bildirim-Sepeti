@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import AppShell from '@/components/AppShell';
-import KpssArchiveClient from '@/components/KpssArchiveClient';
+import KpssArchiveLoader from '@/components/KpssArchiveLoader';
 
 export const metadata: Metadata = {
   title: 'KPSS Merkezi Yerleştirme ve Nitelik Kodu Arşivi',
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export default function KpssArsiviPage() {
   return (
     <AppShell>
-      <KpssArchiveClient />
+      <KpssArchiveLoader />
     </AppShell>
   );
 }
