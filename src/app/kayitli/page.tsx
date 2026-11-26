@@ -35,6 +35,16 @@ export default function KayitliPage() {
     setError(null);
     setAuthRequired(false);
     try {
+      const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
+      const meData = meRes.ok
+        ? ((await meRes.json()) as { authenticated?: boolean })
+        : null;
+      if (meData && meData.authenticated === false) {
+        setAuthRequired(true);
+        setItems([]);
+        return;
+      }
+
       const [savedRes, billingRes] = await Promise.all([
         fetch('/api/saved', { cache: 'no-store' }),
         fetch('/api/billing', { cache: 'no-store' }),
@@ -72,11 +82,21 @@ export default function KayitliPage() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([
-      fetch('/api/saved', { cache: 'no-store' }),
-      fetch('/api/billing', { cache: 'no-store' }),
-    ])
-      .then(async ([savedRes, billingRes]) => {
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then(async (meRes) => {
+        if (!active) return;
+        const meData = meRes.ok
+          ? ((await meRes.json()) as { authenticated?: boolean })
+          : null;
+        if (meData && meData.authenticated === false) {
+          setAuthRequired(true);
+          setItems([]);
+          return;
+        }
+        const [savedRes, billingRes] = await Promise.all([
+          fetch('/api/saved', { cache: 'no-store' }),
+          fetch('/api/billing', { cache: 'no-store' }),
+        ]);
         if (!active) return;
         if (savedRes.status === 401) {
           setAuthRequired(true);

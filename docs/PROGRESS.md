@@ -1,7 +1,25 @@
 # Kamu Bildirim Sepeti - İlerleme ve Devir Defteri
 
 **Son Güncelleme:** 2026-11-26  
-**Aktif Faz:** Faz 4 (RFC 8291/8292 Web Push, Parser Kalibrasyonu, Health Uç Noktası ve Kurulum Hazırlığı)
+**Aktif Faz:** Faz 5 (Cloudflare Cron `scheduled()` Giriş Noktası, Canlı Kaynak Probu ve Gerçek Tarayıcı Doğrulaması)
+
+## Faz 5 Tamamlananlar
+- [x] **Cloudflare Cron `scheduled()` Worker Sarmalayıcısı (`custom-worker.mjs`, `src/modules/worker/scheduled.ts`, `wrangler.jsonc`):** OpenNext çıktı worker'ının yalnızca `fetch()` dışa aktarması nedeniyle `0 */6 * * *` cron tetikleyicisinin üretimde sessiz kalmasını önleyen özel giriş noktası eklendi (`DOQueueHandler`, `DOShardedTagCache`, `BucketCachePurge` yeniden ihracı + `ctx.waitUntil` içinde `POST /api/cron/sync` çağrısı, `Authorization: Bearer` ve `x-cron-trigger: cloudflare_cron` / `cf-cron` başlıkları, gizli anahtar sızdırmayan güvenli hata kaydı); `tests/phase5-worker-cron.test.ts` (6 test) ve `npx wrangler deploy --dry-run` paket doğrulaması geçti.
+- [x] **Canlı Resmî Kaynak Probu ve Ayrıştırıcı İyileştirmeleri (`scripts/probe-sources.ts`, `package.json`, `src/modules/announcements/parsers.ts`, `tests/phase5-live-parsers.test.ts`):** `npm run probe:sources` (`--offline`, `--strict`, `--json`, 10sn timeout, güvenli WAF/ağ tanısı) eklendi; canlı HTML çıktısı sonrası `resolveUrl`, `stripLayoutChrome`, `hasCardClassToken` ve `extractWrappedCardAnchors` cerrahi olarak sertleştirildi (canlı İŞKUR `12`, Resmî Gazete `16` toplam `28` ilan ayrıştırıldı; Kariyer Kapısı statik kabuk/JS render olarak tanılı raporlandı; `npx wrangler whoami` ile CLI oturumunun henüz açılmadığı tespit edildi).
+- [x] **Gerçek Tarayıcı (`antislop` R-35) Denetimi, Yerel D1 Fallback ve 401/Mobil Taşma Düzeltmeleri (`scripts/browser-audit.mjs`, `src/modules/db/index.ts`, `src/components/**`, `src/app/**`):**
+  - `src/modules/db/index.ts` içine `WeakSet` önbellekli şema kontrolü (`SELECT 1 FROM announcements LIMIT 1`) eklendi; migrate edilmemiş yerel Miniflare `env.DB` altında `next start` artık `MemoryDbAdapter` adaptörüne zarifçe düşer (`tests/phase5-db-fallback.test.ts`).
+  - `AnnouncementFeed.tsx`, `/profil`, `/kayitli`, `/premium` ve `/ayarlar` içinde `/api/auth/me` ön kontrolü ile oturumsuz ilk yüklemedeki 401 ağ/konsol gürültüsü sıfırlandı (mock test uyumu korundu).
+  - `/kpss-arsivi` mobilde (`390px`) tespit edilen `421px` taşma `src/components/SearchWorkbench.tsx` mod seçici şeridinde `flex flex-wrap max-w-full` ile giderildi (`390 <= 390`).
+
+## Doğrulama Özeti (Faz 5 Son Doğrulama)
+- [x] Yasaklı referans marka taraması: 0 eşleşme (`src/`, `custom-worker.mjs`, `scripts/*`, `docs/`, `README.md`, `AGENTS.md`, `tests/`, `.env.example`, `wrangler.jsonc`, `package.json`)
+- [x] Em-dash (`\u2014`) metin taraması: 0 eşleşme (`src/`, `custom-worker.mjs`, `scripts/*`, `README.md`, `.env.example`, `AGENTS.md` satır 10+, `docs/PROGRESS.md`, `docs/ROADMAP.md`)
+- [x] Varsayılan paralel `npm test`: **30/30 test dosyası, 345/345 test geçti (`EXIT=0`, `9.15s`)**
+- [x] `npm run lint` ve `npx tsc --noEmit`: 0 hata (`EXIT=0`)
+- [x] `npm run build` ve `npx opennextjs-cloudflare build`: Başarılı (`EXIT=0`, 53 statik/SSG rota)
+- [x] `npx wrangler deploy --dry-run --outdir /tmp/kbs-wrangler-dry-run`: Başarılı (`33310.23 KiB` / gzip `3703.20 KiB`, pakette `scheduled`, `handleScheduledSync`, `DOQueueHandler`, `DOShardedTagCache`, `BucketCachePurge` doğrulandı)
+- [x] Gerçek Chromium headless denetimi (`node scripts/browser-audit.mjs`): **`[AUDIT PASSED]`** (13 rota + `/ilan/kk-2026-101` HTTP 200, 0 konsol/sayfa/4xx-5xx hatası, Desktop `1440x900` + Mobile `390x844` Açık/Koyu 20/20 matriste 0 taşma, 5/5 R-35 etkileşimi geçti, 4 ekran görüntüsü görsel incelendi)
+- [x] İki eksenli kod incelemesi (`Standards` + `Spec`) ve `antislop` denetimi: Geçti
 
 ## Faz 4 Tamamlananlar
 - [x] **Sıfır Bağımlılıklı Web Crypto VAPID & RFC 8291 Push (`src/modules/push/`, `src/app/api/cron/sync/route.ts`):** `src/modules/push/vapid.ts` içinde standart Web Crypto (`crypto.subtle`, `crypto.getRandomValues`) ile `bytesToBase64Url`, `base64UrlToBytes`, `generateVapidKeyPair`, RFC 8292 ES256 JWT imzalayıcı `createVapidAuthHeader` ve RFC 8291 (`aes128gcm`) `encryptPushPayload` uygulandı; `VapidWebPushAdapter`, `createWebPushAdapter`, `404`/`410` otomatik abonelik budama (`dispatchPushNotification`) ve Premium/profil/tekilleştirme (`push_new_announcement`) kurallı `dispatchPushForNewAnnouncements` eklenerek `POST /api/cron/sync` (`pushAlerts`) içine bağlandı.
@@ -81,4 +99,5 @@
    - Web Push (VAPID): `VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
 
 ## Sıradaki Başlangıç Adımı (Canlı Kurulum ve Dağıtım)
-- [ ] Harici Cloudflare kurulumu ve canlı dağıtım: `bash scripts/setup-cloudflare.sh --generate-vapid`, `bash scripts/setup-cloudflare.sh --execute`, tüm üretim gizli değişkenlerinin (`SESSION_SECRET`, `CRON_SECRET`, e-posta/ödeme/VAPID anahtarları ve `VAPID_SUBJECT`) tanımlanması ve canlı alan adı yayını.
+- [ ] Harici Cloudflare oturumu ve canlı dağıtım: `npx wrangler login`, `bash scripts/setup-cloudflare.sh --generate-vapid`, `bash scripts/setup-cloudflare.sh --execute`, tüm üretim gizli değişkenlerinin (`SESSION_SECRET`, `CRON_SECRET`, e-posta/ödeme/VAPID anahtarları ve `VAPID_SUBJECT`) tanımlanması, `npm run deploy` ve canlı alanda `POST /api/cron/sync` + `npm run probe:sources` kontrolü.
+- [ ] (İsteğe bağlı sonraki sprint) Kariyer Kapısı canlı liste uç noktası JS-rendered kabuk arkasındaki XHR/API sözleşmesinin incelenmesi ve eklenmesi.

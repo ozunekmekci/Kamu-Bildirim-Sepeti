@@ -24,8 +24,18 @@ export default function PremiumPage() {
 
   useEffect(() => {
     let active = true;
-    fetch('/api/billing', { cache: 'no-store' })
-      .then(async (res) => {
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then(async (meRes) => {
+        if (!active) return;
+        const meData = meRes.ok
+          ? ((await meRes.json()) as { authenticated?: boolean })
+          : null;
+        if (meData && meData.authenticated === false) {
+          setAuthenticated(false);
+          setCurrentPlan('free');
+          return;
+        }
+        const res = await fetch('/api/billing', { cache: 'no-store' });
         if (!active) return;
         if (res.status === 401) {
           setAuthenticated(false);

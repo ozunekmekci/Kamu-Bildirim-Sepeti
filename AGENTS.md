@@ -35,7 +35,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 | --- | --- | --- |
 | Announcements | `src/modules/announcements/` (`types.ts`, `seed.ts`, `parsers.ts`, `service.ts`, `index.ts`) | Unified `Announcement` schema, 24 seed items, zero-dependency Workers HTML/JSON-LD/RSS/fihrist parsers, filtering, facets, and `syncOfficialSources` |
 | Matching | `src/modules/matching/` (`engine.ts`, `index.ts`) | Pure eligibility scoring (`evaluateAnnouncementMatch`, `matchAnnouncementsForProfile`) reusing `@/lib/turkish`, `@/data/departments`, `@/data/qualifications` |
-| Database | `src/modules/db/` (`types.ts`, `d1-adapter.ts`, `memory-adapter.ts`, `index.ts`) | `DatabaseAdapter` seam with Cloudflare D1 adapter and local/test `MemoryDbAdapter` fallback via `getDb()` |
+| Database | `src/modules/db/` (`types.ts`, `d1-adapter.ts`, `memory-adapter.ts`, `index.ts`) | `DatabaseAdapter` seam with Cloudflare D1 adapter, cached `WeakSet` table check, and local/unmigrated `MemoryDbAdapter` fallback via `getDb()` |
+| Worker Cron | `custom-worker.mjs`, `src/modules/worker/scheduled.ts`, `wrangler.jsonc` | OpenNext `fetch` + DO re-exports wrapped with `scheduled()` handler calling `POST /api/cron/sync` inside `ctx.waitUntil()` |
 | Identity | `src/modules/identity/` (`crypto.ts`, `service.ts`, `index.ts`) | Edge-compatible Web Crypto PBKDF2 + HMAC-SHA256 `kbs_session` cookies, registration/login, email verification & password reset tokens, profile management, KVKK cascade deletion |
 | Tracking | `src/modules/tracking/` (`email-adapters.ts`, `service.ts`, `index.ts`) | Saved announcements, free/premium save limits, notification preferences, reminder & new-announcement deduplication behind `Resend`/`MailChannels`/`Noop` `EmailAdapter` seam |
 | Billing | `src/modules/billing/` (`payment-adapters.ts`, `service.ts`, `index.ts`) | `EntitlementGate` (Free: 15 visible / 10 saved; Premium: unlimited + profile match + instant alerts) and `Demo`/`Stripe`/`iyzico` `PaymentAdapter` seam with fail-closed webhook verification |
@@ -44,7 +45,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 | D1 Schema | `migrations/0001_init.sql`, `migrations/0002_phase2.sql`, `migrations/0003_phase3.sql` | SQLite/D1 schema (`users`, `sessions`, `auth_tokens`, `user_profiles`, `announcements`, `saved_announcements`, `notification_prefs`, `reminder_logs`, `subscriptions`, `sync_runs`, `push_subscriptions`) with `ON DELETE CASCADE` |
 | API Routes | `src/app/api/**` | `auth/{register,login,logout,me,verify-email,resend-verification,forgot-password,reset-password}`, `profile`, `account`, `announcements/{,id,matched}`, `saved`, `notifications/preferences`, `billing/{,plan,checkout,webhook/stripe,webhook/iyzico}`, `push/{vapid-key,subscriptions}`, `cron/sync`, `sync/status`, `health` |
 | App Routes | `src/app/**` | `/`, `/analiz`, `/sehir/[slug]`, `/kaynak/[slug]`, `/ilan/[id]`, `/kayitli`, `/profil`, `/ayarlar`, `/premium`, `/giris`, `/kayit`, `/sifre-sifirla`, `/eposta-dogrula`, `/kpss-arsivi`, `/gizlilik-politikasi`, `/kullanim-kosullari` |
-| Deploy & Env | `scripts/setup-cloudflare.sh`, `.env.example` | Dry-run-by-default Wrangler D1 setup, `--generate-vapid` P-256 keypair generator, migration/secret setup script, and 17-variable `.env.example` |
+| Deploy, Probe & QA | `scripts/setup-cloudflare.sh`, `scripts/probe-sources.ts`, `scripts/browser-audit.mjs`, `.env.example` | Dry-run Wrangler D1/VAPID setup, live official source diagnostic probe (`npm run probe:sources`), headless Chromium audit, and 17-variable `.env.example` |
 
 ## Phase 2, Phase 3 & Phase 4 Environment Variables
 - Site & Auth/Cron: `NEXT_PUBLIC_SITE_URL`, `SESSION_SECRET`, `CRON_SECRET`

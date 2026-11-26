@@ -154,10 +154,9 @@ export function AnnouncementFeed({
     setFeedError(null);
     if (announcements.length === 0) setLoadingFeed(true);
     try {
-      const [annRes, meRes, savedRes] = await Promise.all([
+      const [annRes, meRes] = await Promise.all([
         fetch('/api/announcements?status=hepsi', { cache: 'no-store' }),
         fetch('/api/auth/me', { cache: 'no-store' }),
-        fetch('/api/saved', { cache: 'no-store' }),
       ]);
 
       const annData = annRes.ok
@@ -169,9 +168,13 @@ export function AnnouncementFeed({
       const meData = meRes.ok
         ? ((await meRes.json()) as Parameters<typeof applyFeedResults>[1])
         : null;
-      const savedData = savedRes.ok
-        ? ((await savedRes.json()) as Parameters<typeof applyFeedResults>[2])
-        : null;
+      let savedData: Parameters<typeof applyFeedResults>[2] = null;
+      if (meData?.user) {
+        const savedRes = await fetch('/api/saved', { cache: 'no-store' });
+        savedData = savedRes.ok
+          ? ((await savedRes.json()) as Parameters<typeof applyFeedResults>[2])
+          : null;
+      }
 
       applyFeedResults(annData, meData, savedData);
     } catch {
@@ -188,9 +191,8 @@ export function AnnouncementFeed({
     Promise.all([
       fetch('/api/announcements?status=hepsi', { cache: 'no-store' }),
       fetch('/api/auth/me', { cache: 'no-store' }),
-      fetch('/api/saved', { cache: 'no-store' }),
     ])
-      .then(async ([annRes, meRes, savedRes]) => {
+      .then(async ([annRes, meRes]) => {
         if (!active) return;
         const annData = annRes.ok
           ? ((await annRes.json()) as Parameters<typeof applyFeedResults>[0])
@@ -201,9 +203,14 @@ export function AnnouncementFeed({
         const meData = meRes.ok
           ? ((await meRes.json()) as Parameters<typeof applyFeedResults>[1])
           : null;
-        const savedData = savedRes.ok
-          ? ((await savedRes.json()) as Parameters<typeof applyFeedResults>[2])
-          : null;
+        let savedData: Parameters<typeof applyFeedResults>[2] = null;
+        if (meData?.user) {
+          const savedRes = await fetch('/api/saved', { cache: 'no-store' });
+          if (!active) return;
+          savedData = savedRes.ok
+            ? ((await savedRes.json()) as Parameters<typeof applyFeedResults>[2])
+            : null;
+        }
         applyFeedResults(annData, meData, savedData);
       })
       .catch(() => {

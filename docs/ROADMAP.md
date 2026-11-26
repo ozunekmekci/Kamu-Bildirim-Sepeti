@@ -17,7 +17,13 @@
 - E-posta doğrulama ve parola sıfırlama akışları
 
 ## Faz 3: Web Push, Gelişmiş Analitik ve SEO Genişlemesi
-- PWA Service Worker üzerinden tarayıcı anlık bildirimleri (Web Push)
+- PWA Service Worker üzerinden tarayıcı anlık bildirimleri (Web Push + RFC 8291/8292 sıfır bağımlılıklı Web Crypto göndericisi)
 - Kurum, şehir ve nitelik kodu bazlı geçmiş alım yoğunluğu ve taban puan eğilim panoları
 - Dinamik il/kurum/nitelik kodu iniş sayfaları ve otomatik sitemap genişletmesi
 - Kurumsal / danışmanlık hesapları için çoklu aday profili karşılaştırma desteği
+
+## Faz 4 & Faz 5: Operasyonel Hazırlık, Cron Giriş Noktası ve Tarayıcı Doğrulaması (Tamamlandı)
+- `GET /api/health`, `.env.example`, `scripts/setup-cloudflare.sh --generate-vapid` ve `/ayarlar` altyapı hazırlığı çipleri
+- `custom-worker.mjs` + `src/modules/worker/scheduled.ts` ile Cloudflare Cron `0 */6 * * *` `scheduled()` -> `POST /api/cron/sync` bağlantısı
+- `scripts/probe-sources.ts` (`npm run probe:sources`) ile canlı resmî kaynak tanılama CLI'ı
+- `scripts/browser-audit.mjs` ile gerçek Chromium üretim derlemesi, Açık/Koyu tema ve Masaüstü/Mobil `antislop` R-35 doğrulaması

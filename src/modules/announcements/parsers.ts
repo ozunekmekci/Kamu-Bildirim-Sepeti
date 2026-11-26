@@ -70,10 +70,16 @@ function extractByClassOrTag(block: string, classPatterns: string[]): string | n
 function resolveUrl(href: string | null, baseUrl: string): string {
   if (!href) return baseUrl;
   const trimmed = href.trim();
-  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('javascript:')) return baseUrl;
+  if (!trimmed || trimmed.startsWith('#') || /^(?:javascript|mailto|tel|data):/i.test(trimmed)) {
+    return baseUrl;
+  }
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
+  try {
+    return new URL(trimmed, baseUrl).toString();
+  } catch {
+    const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
+  }
 }
 
 const RFC_MONTHS: Record<string, string> = {
@@ -251,15 +257,26 @@ function computeStatus(deadlineAt: string, referenceDate?: string): Announcement
   return deadlineAt >= ref ? 'acik' : 'kapali';
 }
 
+const CARD_CLASS_TOKEN_REGEX =
+  /^(?:ilan(?:-[a-z0-9-]+)?|card|announcement(?:-[a-z0-9-]+)?|fihrist-item|job-item)$/i;
+
+function hasCardClassToken(openDivTag: string): boolean {
+  const classAttr = extractAttr(openDivTag, 'class');
+  if (!classAttr) return false;
+  return classAttr
+    .split(/\s+/)
+    .some((token) => CARD_CLASS_TOKEN_REGEX.test(token.trim()));
+}
+
 function extractBalancedDivs(html: string): string[] {
   const results: string[] = [];
-  const openCardRegex =
-    /<div\b[^>]*class\s*=\s*["'][^"']*(?:ilan|card|announcement|fihrist-item|job-item)[^"']*["'][^>]*>/gi;
+  const openDivRegex = /<div\b[^>]*>/gi;
   let match: RegExpExecArray | null;
   let searchFrom = 0;
 
-  while ((match = openCardRegex.exec(html)) !== null) {
+  while ((match = openDivRegex.exec(html)) !== null) {
     if (match.index < searchFrom) continue;
+    if (!hasCardClassToken(match[0])) continue;
     const start = match.index;
     let depth = 1;
     let cursor = start + match[0].length;
@@ -286,15 +303,45 @@ function extractBalancedDivs(html: string): string[] {
   return results;
 }
 
+function stripLayoutChrome(html: string): string {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, ' ')
+    .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, ' ')
+    .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, ' ');
+}
+
+function extractWrappedCardAnchors(html: string): string[] {
+  const anchors = html.match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) ?? [];
+  return anchors.filter((anchor) =>
+    /<div\b[^>]*class\s*=\s*["'][^"']*\b(?:news-item|duyuru-item|ilan-item)\b[^"']*["'][^>]*>/i.test(
+      anchor
+    )
+  );
+}
+
 function extractBlocks(html: string): string[] {
-  for (const tag of ['article', 'tr', 'li']) {
+  const cleaned = stripLayoutChrome(html);
+  for (const tag of ['article', 'tr']) {
     const regex = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, 'gi');
-    const matches = html.match(regex);
+    const matches = cleaned.match(regex);
     if (matches && matches.length > 0) {
       return matches;
     }
   }
-  return extractBalancedDivs(html);
+
+  const cardDivs = extractBalancedDivs(cleaned);
+  if (cardDivs.length > 0) {
+    return cardDivs;
+  }
+
+  const wrappedAnchors = extractWrappedCardAnchors(cleaned);
+  if (wrappedAnchors.length > 0) {
+    return wrappedAnchors;
+  }
+
+  return cleaned.match(/<li\b[^>]*>[\s\S]*?<\/li>/gi) ?? [];
 }
 
 function extractAnchor(block: string, preferPdf = false): { href: string | null; text: string | null } {
@@ -347,7 +394,15 @@ function buildAnnouncementFromBlock(
     extractByClassOrTag(block, ['institution', 'kurum', 'agency', 'ministry']) ||
     '';
   let title =
-    extractByClassOrTag(block, ['title', 'baslik', 'ilan-baslik', 'fihrist-title', 'position', 'subject']) ||
+    extractByClassOrTag(block, [
+      'title',
+      'news-title',
+      'baslik',
+      'ilan-baslik',
+      'fihrist-title',
+      'position',
+      'subject',
+    ]) ||
     anchor.text ||
     '';
 
@@ -363,6 +418,7 @@ function buildAnnouncementFromBlock(
   if (!title) {
     title = fullText.slice(0, 120);
   }
+  title = title.replace(/^[\s\u2013\u2014-]+/, '').trim();
 
   if (!institution && title) {
     const split = splitInstitutionAndTitle(title);

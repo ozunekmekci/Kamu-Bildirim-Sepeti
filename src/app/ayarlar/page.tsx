@@ -203,17 +203,66 @@ export default function AyarlarPage() {
       'PushManager' in window;
 
     Promise.all([
-      fetch('/api/notifications/preferences', { cache: 'no-store' }),
-      fetch('/api/billing', { cache: 'no-store' }),
       fetch('/api/auth/me', { cache: 'no-store' }),
       fetch('/api/sync/status', { cache: 'no-store' }),
       fetch('/api/push/vapid-key', { cache: 'no-store' }).catch(() => null),
-      fetch('/api/push/subscriptions', { cache: 'no-store' }).catch(() => null),
       fetch('/api/health', { cache: 'no-store' }).catch(() => null),
     ])
-      .then(async ([prefsRes, billingRes, meRes, syncRes, vapidRes, pushSubRes, healthRes]) => {
+      .then(async ([meRes, syncRes, vapidRes, healthRes]) => {
         if (!active) return;
         setPushSupported(supported);
+
+        let meData: {
+          authenticated?: boolean;
+          user?: { email?: string; emailVerifiedAt?: string | null } | null;
+        } | null = null;
+        if (meRes.ok) {
+          meData = (await meRes.json()) as {
+            authenticated?: boolean;
+            user?: { email?: string; emailVerifiedAt?: string | null } | null;
+          };
+          if (meData.user) {
+            setUserEmail(meData.user.email ?? null);
+            setEmailVerifiedAt(meData.user.emailVerifiedAt ?? null);
+          }
+        }
+        if (syncRes.ok) {
+          const syncData = (await syncRes.json()) as {
+            lastRun?: SyncRunSummary | null;
+          };
+          setLastSyncRun(syncData.lastRun ?? null);
+        }
+        if (vapidRes && vapidRes.ok) {
+          const vapidData = (await vapidRes.json()) as {
+            configured?: boolean;
+            publicKey?: string | null;
+          };
+          setVapidConfigured(Boolean(vapidData.configured && vapidData.publicKey));
+          setVapidPublicKey(vapidData.publicKey ?? null);
+        }
+        if (healthRes && healthRes.ok) {
+          try {
+            const healthData = (await healthRes.json()) as HealthReadinessResponse;
+            if (healthData && (healthData.database || healthData.providers)) {
+              setHealthStatus(healthData);
+            }
+          } catch {
+            // Ignore malformed /api/health payload
+          }
+        }
+
+        if (meData && meData.authenticated === false) {
+          setAuthRequired(true);
+          return;
+        }
+
+        const [prefsRes, billingRes, pushSubRes] = await Promise.all([
+          fetch('/api/notifications/preferences', { cache: 'no-store' }),
+          fetch('/api/billing', { cache: 'no-store' }),
+          fetch('/api/push/subscriptions', { cache: 'no-store' }).catch(() => null),
+        ]);
+        if (!active) return;
+
         if (prefsRes.status === 401) {
           setAuthRequired(true);
           return;
@@ -246,44 +295,11 @@ export default function AyarlarPage() {
             setPlan(bData.entitlements.plan);
           }
         }
-        if (meRes.ok) {
-          const meData = (await meRes.json()) as {
-            user?: { email?: string; emailVerifiedAt?: string | null } | null;
-          };
-          if (meData.user) {
-            setUserEmail(meData.user.email ?? null);
-            setEmailVerifiedAt(meData.user.emailVerifiedAt ?? null);
-          }
-        }
-        if (syncRes.ok) {
-          const syncData = (await syncRes.json()) as {
-            lastRun?: SyncRunSummary | null;
-          };
-          setLastSyncRun(syncData.lastRun ?? null);
-        }
-        if (vapidRes && vapidRes.ok) {
-          const vapidData = (await vapidRes.json()) as {
-            configured?: boolean;
-            publicKey?: string | null;
-          };
-          setVapidConfigured(Boolean(vapidData.configured && vapidData.publicKey));
-          setVapidPublicKey(vapidData.publicKey ?? null);
-        }
         if (pushSubRes && pushSubRes.ok) {
           const subData = (await pushSubRes.json()) as {
             subscriptions?: PushSubscriptionItem[];
           };
           setPushSubscriptions(Array.isArray(subData.subscriptions) ? subData.subscriptions : []);
-        }
-        if (healthRes && healthRes.ok) {
-          try {
-            const healthData = (await healthRes.json()) as HealthReadinessResponse;
-            if (healthData && (healthData.database || healthData.providers)) {
-              setHealthStatus(healthData);
-            }
-          } catch {
-            // Ignore malformed /api/health payload
-          }
         }
       })
       .catch(() => {

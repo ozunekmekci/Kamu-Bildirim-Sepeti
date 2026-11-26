@@ -202,7 +202,7 @@ export default function SearchWorkbench({
           </div>
 
           {/* Mode Switcher Buttons */}
-          <div className="inline-flex rounded-none border border-slate-300 bg-white p-0.5 text-xs font-semibold self-start md:self-auto">
+          <div className="flex flex-wrap rounded-none border border-slate-300 bg-white p-0.5 text-xs font-semibold self-start md:self-auto max-w-full">
             <button
               type="button"
               onClick={() => setSearchMode('department')}

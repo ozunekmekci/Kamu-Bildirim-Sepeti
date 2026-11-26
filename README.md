@@ -14,12 +14,12 @@ Platform aşağıdaki resmî kamu kaynaklarından derlenen ilan yapılarını ve
 ## Teknoloji Yığını
 - **Framework:** Next.js 16 (App Router) + React 19 + TypeScript 5
 - **Stil:** Tailwind CSS v4 (Açık ve Koyu tema destekli)
-- **Çalışma Ortamı & Veritabanı:** OpenNext Cloudflare Workers + Cloudflare D1 (`migrations/0001_init.sql`, `migrations/0002_phase2.sql`, `migrations/0003_phase3.sql`) + Cron Triggers (`0 */6 * * *`)
+- **Çalışma Ortamı & Veritabanı:** OpenNext Cloudflare Workers (`custom-worker.mjs` + `scheduled()` Cron giriş noktası) + Cloudflare D1 (`migrations/0001_init.sql`, `migrations/0002_phase2.sql`, `migrations/0003_phase3.sql`) + Cron Triggers (`0 */6 * * *`)
 - **Kimlik Doğrulama & Güvenlik:** Edge uyumlu Web Crypto (`PBKDF2` SHA-256 + `HMAC-SHA256`), `kbs_session` HttpOnly/SameSite=Lax çerezi, tek kullanımlık e-posta doğrulama ve parola sıfırlama token akışları (`/eposta-dogrula`, `/sifre-sifirla`), self-servis KVKK hesap silme
 - **E-posta, Ödeme ve Web Push:** `Resend` / `MailChannels` / `Noop` e-posta adaptörleri; `Demo` / `Stripe` / `iyzico` ödeme adaptörleri ve Web Crypto HMAC webhook doğrulaması; `public/sw.js` Service Worker + `push_subscriptions` + sıfır bağımlılıklı Web Crypto RFC 8291 (`aes128gcm`) & RFC 8292 (`ES256` VAPID) göndericisi (`404`/`410` otomatik budama ve `POST /api/cron/sync` entegrasyonu)
-- **Resmî Kaynak Ayrıştırma ve Sağlık İzleme:** `application/ld+json` `JobPosting`, RSS/Atom geri dönüş desteği ve Resmî Gazete PDF fihrist ayrıştırması; gizli değer sızdırmayan `GET /api/health` uç noktası ve `/ayarlar` altyapı hazırlığı şeridi
+- **Resmî Kaynak Ayrıştırma, Tanılama ve Sağlık İzleme:** `application/ld+json` `JobPosting`, RSS/Atom geri dönüş desteği ve Resmî Gazete PDF fihrist ayrıştırması; `npm run probe:sources` canlı kaynak probu, gizli değer sızdırmayan `GET /api/health` uç noktası ve `/ayarlar` altyapı hazırlığı şeridi
 - **Analitik ve Programatik SEO:** Gerçek veri setlerinden hesaplanan `/analiz` panosu, `/sehir/[slug]` il sayfaları, `/kaynak/[slug]` resmî kaynak sayfaları ve canlı profil senaryo karşılaştırması
-- **Test:** Vitest + Testing Library
+- **Test ve Tarayıcı Denetimi:** Vitest + Testing Library + sıfır bağımlılıklı headless Chromium denetimi (`node scripts/browser-audit.mjs`)
 
 ## Yerel Geliştirme
 
@@ -28,7 +28,7 @@ npm install
 npm run dev
 ```
 
-Yerel geliştirme ve test ortamında Cloudflare D1 bağlamı yoksa `src/modules/db/` otomatik olarak bellek içi `MemoryDbAdapter` adaptörüne düşer.
+Yerel geliştirme, test ve migrate edilmemiş yerel D1 durumunda `src/modules/db/` otomatik olarak bellek içi `MemoryDbAdapter` adaptörüne düşer.
 
 ### Doğrulama Komutları
 
@@ -37,6 +37,8 @@ npm test
 npm run lint
 npm run build
 npm run build:worker
+npm run probe:sources
+node scripts/browser-audit.mjs
 ```
 
 ## Cloudflare D1 Kurulumu ve Dağıtım

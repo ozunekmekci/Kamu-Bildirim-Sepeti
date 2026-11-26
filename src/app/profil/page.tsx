@@ -97,6 +97,15 @@ export default function ProfilPage() {
     setError(null);
     setAuthRequired(false);
     try {
+      const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
+      const meData = meRes.ok
+        ? ((await meRes.json()) as { authenticated?: boolean })
+        : null;
+      if (meData && meData.authenticated === false) {
+        setAuthRequired(true);
+        return;
+      }
+
       const res = await fetch('/api/profile', { cache: 'no-store' });
       if (res.status === 401) {
         setAuthRequired(true);
@@ -117,8 +126,17 @@ export default function ProfilPage() {
 
   useEffect(() => {
     let active = true;
-    fetch('/api/profile', { cache: 'no-store' })
-      .then(async (res) => {
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then(async (meRes) => {
+        if (!active) return;
+        const meData = meRes.ok
+          ? ((await meRes.json()) as { authenticated?: boolean })
+          : null;
+        if (meData && meData.authenticated === false) {
+          setAuthRequired(true);
+          return;
+        }
+        const res = await fetch('/api/profile', { cache: 'no-store' });
         if (!active) return;
         if (res.status === 401) {
           setAuthRequired(true);
