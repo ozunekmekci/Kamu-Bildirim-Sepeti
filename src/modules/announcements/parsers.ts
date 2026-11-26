@@ -1,3 +1,4 @@
+import { DEPARTMENTS } from '@/data/departments';
 import { normalizeTrSearch, toTurkishUpper } from '@/lib/turkish';
 import {
   Announcement,
@@ -179,6 +180,280 @@ export function extractQuota(text: string): number | null {
   return null;
 }
 
+function escapeRegexToken(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseValidKpssScore(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const val = Number(raw.replace(',', '.'));
+  if (!Number.isFinite(val) || val < 50 || val > 100) return null;
+  return val;
+}
+
+function extractMinKpssScore(text: string): number | null {
+  // 1. Explicit score wording, multi-line & OCR-tolerant (e.g. "En az\n65\npoan", "taban 70 puan")
+  const explicitRegex =
+    /(?:en\s+az|taban|asgari|baraj|kpss[^0-9]{0,25})\s*(\d{2,3}(?:[.,]\d+)?)\s*(?:p[ou]a[nm]|ve\s+[üu]zeri|ve\s+[üu]st[üu])(?:\b|[^\p{L}])/giu;
+  for (const m of text.matchAll(explicitRegex)) {
+    const score = parseValidKpssScore(m[1]);
+    if (score !== null) return score;
+  }
+
+  // 2. KPSS score type followed by "en az <score>" across spaces or newlines
+  const scoreTypeEnAzRegex =
+    /\b(?:kpss[\s\-/(]*)?(?:p-?3|p-?93|p-?94)\b[\s\S]{0,70}?\ben\s+az\s+(\d{2,3}(?:[.,]\d+)?)\b(?!\s*(?:\.\s*)?(?:say[ıi]l[ıi]|madde|ya[şs]|g[üu]n|ay|y[ıi]l|adet|ki[şs]i|kadro|derece|cm|kg|tl|%))/giu;
+  for (const m of text.matchAll(scoreTypeEnAzRegex)) {
+    const score = parseValidKpssScore(m[1]);
+    if (score !== null) return score;
+  }
+
+  // 3. Compact table row format: "P3 ... 65" on same line or table cell
+  const tableRowRegex =
+    /(?:^|[^\p{L}\p{N}])(?:kpss[\s\-/(]*)?(?:p-?3|p-?93|p-?94)\)?[^\n\r]{0,50}?(?:^|[\s|:/\-\t])(\d{2,3}(?:[.,]\d+)?)\b(?!\s*(?:\.\s*)?(?:say[ıi]l[ıi]|madde|ya[şs]|g[üu]n|ay|y[ıi]l|adet|ki[şs]i|kadro|derece|cm|kg|tl|%))/giu;
+  for (const m of text.matchAll(tableRowRegex)) {
+    const score = parseValidKpssScore(m[1]);
+    if (score !== null) return score;
+  }
+
+  return null;
+}
+
+function extractDriverLicenses(text: string): string[] {
+  const driverLicenses: string[] = [];
+  const licenseGroupRegex =
+    /(?:^|[^\p{L}\p{N}])(?:en\s+az\s+)?((?:\(?[A-E][12E]?\)?(?:\s*(?:,|\/|\bveya\b|\bve\b)\s*\(?[A-E][12E]?\)?)*))\s*s[ıi]n[ıi]f[ıi]\s*(?:s[üu]r[üu]c[üu]|ehliyet)/giu;
+  for (const m of text.matchAll(licenseGroupRegex)) {
+    const group = m[1] ?? '';
+    for (const token of group.matchAll(/\b([A-E][12E]?)\b/gi)) {
+      const cls = token[1].toUpperCase();
+      if (!driverLicenses.includes(cls)) {
+        driverLicenses.push(cls);
+      }
+    }
+  }
+  return driverLicenses;
+}
+
+function extractMaxAge(norm: string): number | null {
+  const patterns = [
+    /\b(\d{2})\s+yasini\s+(?:doldurmamis|asmamis|gecmemis|bitirmemis)\b/,
+    /\b(\d{2})\s+yasindan\s+gun\s+almamis\b/,
+    /\byas\s+siniri\s+(?:en\s+(?:fazla|cok)\s+)?(\d{2})\b/,
+    /\b(?:azami|en\s+fazla|en\s+cok)\s+(\d{2})\s+yas\b/,
+  ];
+  for (const pattern of patterns) {
+    const match = norm.match(pattern);
+    if (match) {
+      const age = Number(match[1]);
+      if (Number.isInteger(age) && age >= 18 && age <= 65) {
+        return age;
+      }
+    }
+  }
+  return null;
+}
+
+function extractGender(norm: string): 'kadin' | 'erkek' | 'hepsi' | null {
+  if (
+    /\b(?:kadin\s+(?:ve\s+|veya\s+)?erkek|erkek\s+(?:ve\s+|veya\s+)?kadin)\b/.test(norm)
+  ) {
+    return 'hepsi';
+  }
+  if (
+    /\b(?:sadece|yalnizca)\s+erkek\b/.test(norm) ||
+    /\bcinsiyet(?:i)?\s+erkek\b/.test(norm)
+  ) {
+    return 'erkek';
+  }
+  if (
+    /\b(?:sadece|yalnizca)\s+kadin\b/.test(norm) ||
+    /\bcinsiyet(?:i)?\s+kadin\b/.test(norm)
+  ) {
+    return 'kadin';
+  }
+  return null;
+}
+
+const KNOWN_CATALOG_DEPT_NORMS = new Set(
+  DEPARTMENTS.map((d) => normalizeTrSearch(d.ad.replace(/\([^)]*\)/g, ''))).filter(Boolean),
+);
+
+const DEPT_NOISE_PATTERNS = [
+  /\b(?:herhangi\s+bir|ilgili|benzeri|esdeger|denkligi|yuksekogretim|fakulte|yuksekokul|universite|mezun|kpss|sinav|kanun|madde|basvuru|belge|sart|kadro|aday|dort\s+yillik|iki\s+yillik|en\s+az|kurumlar)\b/,
+];
+
+const DEPT_GENERIC_ONLY = new Set([
+  'birinden',
+  'biri',
+  'ilgili',
+  'herhangi',
+  'diger',
+  'tum',
+  'butun',
+  'genel',
+  'alan',
+  'bolum',
+  'bolumler',
+  'program',
+  'programlar',
+  'lisans',
+  'onlisans',
+  'on lisans',
+  'ortaogretim',
+  'lise',
+]);
+
+function cleanProseDepartmentCandidate(raw: string): string | null {
+  let candidate = raw
+    .replace(/^[\s,.;:•\-–()]+|[\s,.;:•\-–()]+$/g, '')
+    .replace(
+      /^(?:yükseköğretim\s+kurumlarının|yükseköğretim\s+kurumların|kurumlarının|kurumların|fakültelerinin|fakültelerin|yüksekokullarının|yüksekokulların|meslek\s+yüksekokullarının|üniversitelerin(?:in)?)\s+/i,
+      '',
+    )
+    .replace(
+      /^(?:en\s+az\s+)?(?:(?:dört|iki|4|2)\s+yıllık\s+)?(?:(?:lisans|önlisans|ön\s+lisans)\s+)?(?:düzeyinde\s+)?(?:eğitim\s+veren\s+)?/i,
+      '',
+    )
+    .replace(/^(?:veya|ya\s+da|ve)\s+/i, '')
+    .replace(
+      /\s+(?:lisans|önlisans|ön\s+lisans|bölümü|bölümleri|programı|programları|alanı|alanları)$/i,
+      '',
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // If leading anchor still sits mid-clause (e.g. "... kurumların Egzersiz ve Spor Bilimleri"), trim up to it
+  const anchorIdx = candidate.search(
+    /(?:yükseköğretim\s+kurumlarının|yükseköğretim\s+kurumların|kurumlarının|kurumların|fakültelerinin|fakültelerin|yüksekokullarının|meslek\s+yüksekokullarının|eğitim\s+veren)\s+/i,
+  );
+  if (anchorIdx !== -1) {
+    candidate = candidate
+      .slice(anchorIdx)
+      .replace(
+        /^(?:yükseköğretim\s+kurumlarının|yükseköğretim\s+kurumların|kurumlarının|kurumların|fakültelerinin|fakültelerin|yüksekokullarının|meslek\s+yüksekokullarının|eğitim\s+veren)\s+/i,
+        '',
+      )
+      .trim();
+  }
+
+  if (candidate.length < 3 || candidate.length > 90) return null;
+  const normCand = normalizeTrSearch(candidate);
+  if (!normCand || DEPT_GENERIC_ONLY.has(normCand)) return null;
+  const wordCount = normCand.split(' ').filter(Boolean).length;
+  if (wordCount === 0 || wordCount > 7) return null;
+  if (/\d/.test(normCand)) return null;
+  if (DEPT_NOISE_PATTERNS.some((re) => re.test(normCand))) return null;
+
+  return candidate;
+}
+
+function splitProseDepartmentList(rawList: string): string[] {
+  const initialParts = rawList
+    .split(/\s*(?:,|;|\/|\bveya\b|\bya\s+da\b)\s*/i)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const expanded: string[] = [];
+  for (const part of initialParts) {
+    const partNorm = normalizeTrSearch(part);
+    if (
+      initialParts.length > 1 &&
+      !KNOWN_CATALOG_DEPT_NORMS.has(partNorm) &&
+      /\s+ve\s+/i.test(part)
+    ) {
+      const subParts = part.split(/\s+ve\s+/i).map((s) => s.trim());
+      if (
+        subParts.length === 2 &&
+        subParts.every((s) => normalizeTrSearch(s).split(' ').filter(Boolean).length >= 2)
+      ) {
+        expanded.push(...subParts);
+        continue;
+      }
+    }
+    expanded.push(part);
+  }
+
+  return expanded;
+}
+
+function extractDepartmentsFromText(
+  text: string,
+  norm: string,
+  educationLevels: ('lisans' | 'onlisans' | 'ortaogretim')[],
+): string[] {
+  const results: string[] = [];
+  const seenNorm = new Set<string>();
+
+  const pushUnique = (name: string) => {
+    const key = normalizeTrSearch(name);
+    if (!key || seenNorm.has(key)) return;
+    seenNorm.add(key);
+    results.push(name);
+  };
+
+  // 1. Parse Turkish prose graduation patterns (multi-line flattened)
+  const flatText = text.replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  const proseRegex =
+    /([^.;:\n]{4,280}?)\s+(?:(?:lisans|önlisans|ön\s+lisans)\s+)?(?:programlarının|programlarından|programının|programından|bölümlerinin|bölümlerinden|bölümünün|bölümünden|alanlarının|alanlarından)(?:\s+herhangi)?(?:\s+birinden)?\s+mezun/gi;
+
+  for (const m of flatText.matchAll(proseRegex)) {
+    const clause = (m[1] ?? '')
+      .replace(
+        /^.*(?:yükseköğretim\s+kurumlarının|yükseköğretim\s+kurumların|kurumlarının|kurumların|fakültelerinin|fakültelerin|yüksekokullarının|yüksekokulların|meslek\s+yüksekokullarının|üniversitelerin(?:in)?|eğitim\s+veren)\s+/i,
+        '',
+      )
+      .replace(
+        /^(?:en\s+az\s+)?(?:(?:dört|iki|4|2)\s+yıllık\s+)?(?:(?:lisans|önlisans|ön\s+lisans)\s+)?(?:düzeyinde\s+)?(?:eğitim\s+veren\s+)?/i,
+        '',
+      )
+      .trim();
+    const segments = splitProseDepartmentList(clause);
+    for (const seg of segments) {
+      const cleaned = cleanProseDepartmentCandidate(seg);
+      if (cleaned) {
+        pushUnique(cleaned);
+      }
+    }
+  }
+
+  // 2. Match against DEPARTMENTS catalog safely (avoiding 1-word generic collisions)
+  for (const dept of DEPARTMENTS) {
+    if (
+      educationLevels.length > 0 &&
+      !educationLevels.includes(dept.ogrenimDuzeyi) &&
+      dept.ogrenimDuzeyi === 'ortaogretim'
+    ) {
+      continue;
+    }
+
+    const displayName = dept.ad.replace(/\s*\([^)]*\)/g, '').trim();
+    const coreNorm = normalizeTrSearch(displayName);
+    if (!coreNorm) continue;
+
+    const words = coreNorm.split(' ').filter(Boolean);
+    const escaped = escapeRegexToken(coreNorm);
+
+    if (words.length >= 2) {
+      const multiRegex = new RegExp(
+        `(?:^|\\s)${escaped}(?:$|\\s)(?!kurumu|bakanligi|genel mudurlugu|baskanligi|mudurlugu|hastanesi)`,
+      );
+      if (multiRegex.test(norm)) {
+        pushUnique(displayName);
+      }
+    } else if (coreNorm.length >= 4) {
+      const singleContextRegex = new RegExp(
+        `(?:^|\\s)${escaped}\\s+(?:fakultesi|bolumu|bolumleri|bolumunden|bolumlerinden|programi|programlari|programindan|programlarindan|mezunu|mezun|myo|meslek yuksekokulu|lisans|onlisans)(?:$|\\s)`,
+      );
+      if (singleContextRegex.test(norm)) {
+        pushUnique(displayName);
+      }
+    }
+  }
+
+  return results;
+}
+
 export function extractCriteriaFromText(text: string, city: string): AnnouncementCriteria {
   const norm = normalizeTrSearch(text);
   const educationLevels: ('lisans' | 'onlisans' | 'ortaogretim')[] = [];
@@ -193,24 +468,29 @@ export function extractCriteriaFromText(text: string, city: string): Announcemen
   }
 
   const kpssScoreTypes: ('P3' | 'P93' | 'P94')[] = [];
-  if (/\bp3\b/i.test(text)) kpssScoreTypes.push('P3');
-  if (/\bp93\b/i.test(text)) kpssScoreTypes.push('P93');
-  if (/\bp94\b/i.test(text)) kpssScoreTypes.push('P94');
+  if (/(?:^|[^a-z0-9])(?:kpss[\s\-/(]*)?p-?3\b/i.test(text)) kpssScoreTypes.push('P3');
+  if (/(?:^|[^a-z0-9])(?:kpss[\s\-/(]*)?p-?93\b/i.test(text)) kpssScoreTypes.push('P93');
+  if (/(?:^|[^a-z0-9])(?:kpss[\s\-/(]*)?p-?94\b/i.test(text)) kpssScoreTypes.push('P94');
 
-  const scoreMatch = text.match(/(?:en\s*az|taban|kpss[^0-9]{0,20})\s*(\d{2}(?:[.,]\d+)?)\s*puan/i);
-  const minKpssScore = scoreMatch ? Number(scoreMatch[1].replace(',', '.')) : null;
+  const minKpssScore = extractMinKpssScore(text);
 
-  const qualificationCodes = Array.from(new Set(text.match(/\b[1-7]\d{3}\b/g) ?? [])).filter(
-    (code) => Number(code) < 1900 || Number(code) > 2100 || ['2001', '2009', '2013', '2015', '2041', '2061', '2065', '2087', '2095', '2097'].includes(code)
+  const qualMatches = Array.from(
+    text.matchAll(
+      /\b([1-7]\d{3})\b(?!\s*(?:say[ıi]l[ıi]|nolu|numaral[ıi]|tarihli|y[ıi]l[ıi]|tl|lira|cm|kg|km|adet|ki[şs]i))/gi,
+    ),
+    (m) => m[1],
+  );
+  const qualificationCodes = Array.from(new Set(qualMatches)).filter(
+    (code) =>
+      code !== '5188' &&
+      (Number(code) < 1900 ||
+        Number(code) > 2100 ||
+        ['2001', '2009', '2013', '2015', '2041', '2061', '2065', '2087', '2095', '2097'].includes(
+          code,
+        )),
   );
 
-  const driverLicenses: string[] = [];
-  const licenseRegex = /\b([A-E][12]?)\s*sınıfı\s*(?:sürücü|ehliyet)/gi;
-  let lm: RegExpExecArray | null;
-  while ((lm = licenseRegex.exec(text)) !== null) {
-    const cls = lm[1].toUpperCase();
-    if (!driverLicenses.includes(cls)) driverLicenses.push(cls);
-  }
+  const driverLicenses = extractDriverLicenses(text);
 
   const certificates: string[] = [];
   if (qualificationCodes.includes('6225') || norm.includes('bilgisayar sertifika')) {
@@ -219,7 +499,7 @@ export function extractCriteriaFromText(text: string, city: string): Announcemen
   if (norm.includes('5188') || norm.includes('ozel guvenlik kimlik')) {
     certificates.push('5188');
   }
-  if (norm.includes('src')) {
+  if (/\bsrc\b/.test(norm) || /\bsrc[1-5]\b/.test(norm)) {
     const srcMatch = text.match(/\bSRC[- ]?([1-5])\b/i);
     certificates.push(srcMatch ? `SRC-${srcMatch[1]}` : 'SRC');
   }
@@ -237,6 +517,10 @@ export function extractCriteriaFromText(text: string, city: string): Announcemen
     norm.includes('askerlikten muaf') ||
     norm.includes('askerlik sarti');
 
+  const maxAge = extractMaxAge(norm);
+  const gender = extractGender(norm);
+  const departments = extractDepartmentsFromText(text, norm, educationLevels);
+
   const summaryLines: string[] = [];
   if (educationLevels.length > 0) {
     summaryLines.push(`Öğrenim düzeyi: ${educationLevels.join(', ')}`);
@@ -245,6 +529,18 @@ export function extractCriteriaFromText(text: string, city: string): Announcemen
     summaryLines.push(
       `KPSS: ${kpssScoreTypes.join(', ') || 'Belirtilen puan türü'}${minKpssScore !== null ? ` (En az ${minKpssScore} puan)` : ''}`
     );
+  }
+  if (departments.length > 0) {
+    summaryLines.push(`Bölüm şartı: ${departments.slice(0, 6).join(', ')}`);
+  }
+  if (driverLicenses.length > 0) {
+    summaryLines.push(`Sürücü belgesi: ${driverLicenses.join(', ')} sınıfı`);
+  }
+  if (maxAge !== null) {
+    summaryLines.push(`Yaş sınırı: En fazla ${maxAge} yaş`);
+  }
+  if (certificates.length > 0) {
+    summaryLines.push(`Sertifika / belge: ${certificates.join(', ')}`);
   }
   if (qualificationCodes.length > 0) {
     summaryLines.push(`Nitelik kodları: ${qualificationCodes.join(', ')}`);
@@ -260,6 +556,9 @@ export function extractCriteriaFromText(text: string, city: string): Announcemen
     certificates,
     qualificationCodes,
     summaryLines,
+    departments,
+    maxAge,
+    gender,
   };
 }
 

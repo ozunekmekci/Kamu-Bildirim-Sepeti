@@ -78,6 +78,10 @@ export interface AnnouncementCriteria {
   certificates: string[];
   qualificationCodes: string[];
   summaryLines: string[];
+  departments?: string[];
+  maxAge?: number | null;
+  gender?: 'kadin' | 'erkek' | 'hepsi' | null;
+  extractedTextExcerpt?: string | null;
 }
 
 export interface Announcement {
@@ -119,6 +123,11 @@ export interface AnnouncementFilter {
   noticeType?: NoticeType | 'hepsi';
   city?: string;
   q?: string;
+  educationLevel?: 'lisans' | 'onlisans' | 'ortaogretim' | 'hepsi';
+  kpssScoreType?: 'P3' | 'P93' | 'P94' | 'hepsi';
+  maxKpssScore?: number;
+  driverLicense?: string;
+  department?: string;
 }
 
 export interface AnnouncementFacets {

@@ -2,11 +2,13 @@ export * from './types';
 export { INITIAL_ANNOUNCEMENTS } from './seed';
 export {
   OFFICIAL_SOURCE_URLS,
+  extractCriteriaFromText,
   parseKariyerKapisiHtml,
   parseIskurHtml,
   parseResmiGazeteHtml,
   fetchOfficialAnnouncements,
 } from './parsers';
+export { enrichAnnouncementFromPdfText } from './pdf-criteria';
 export {
   inferCityFromInstitutionOrText,
   parseCityAndDistrict,

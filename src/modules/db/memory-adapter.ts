@@ -71,6 +71,9 @@ function cloneAnnouncement(item: Announcement): Announcement {
       certificates: [...item.criteria.certificates],
       qualificationCodes: [...item.criteria.qualificationCodes],
       summaryLines: [...item.criteria.summaryLines],
+      ...(item.criteria.departments !== undefined
+        ? { departments: [...item.criteria.departments] }
+        : {}),
     },
   };
 }

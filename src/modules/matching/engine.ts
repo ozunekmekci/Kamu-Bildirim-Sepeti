@@ -199,6 +199,154 @@ function evaluateQualificationCodes(
   }
 }
 
+const GENERAL_EDUCATION_CODES = new Set(['4001', '3001', '2001']);
+
+function evaluateDriverLicenses(
+  requiredLicenses: string[],
+  profile: MatchingProfileInput,
+  matchedReasons: string[],
+  missingReasons: string[],
+): void {
+  if (requiredLicenses.length === 0) return;
+  const userLicenses = profile.driverLicenses ?? [];
+  const matchedLicense = requiredLicenses.find((req) =>
+    hasDriverLicense(userLicenses, req),
+  );
+  if (matchedLicense) {
+    matchedReasons.push(`Sürücü belgesi uygun (${matchedLicense} sınıfı)`);
+  } else {
+    missingReasons.push(
+      `Sürücü belgesi eksik (Aranan: ${requiredLicenses.join(' veya ')})`,
+    );
+  }
+}
+
+function evaluateCertificates(
+  requiredCerts: string[],
+  profile: MatchingProfileInput,
+  matchedReasons: string[],
+  missingReasons: string[],
+): void {
+  if (requiredCerts.length === 0) return;
+  const missingCerts: string[] = [];
+  const matchedCerts: string[] = [];
+  for (const cert of requiredCerts) {
+    if (hasCertificate(profile, cert)) {
+      matchedCerts.push(cert);
+    } else {
+      missingCerts.push(cert);
+    }
+  }
+  if (matchedCerts.length > 0 && missingCerts.length === 0) {
+    matchedReasons.push(`Sertifika / belge şartı uygun (${matchedCerts.join(', ')})`);
+  } else if (missingCerts.length > 0) {
+    missingReasons.push(`Eksik sertifika veya belge (${missingCerts.join(', ')})`);
+  }
+}
+
+function buildUserDepartmentTerms(departmentId: string): {
+  exactTerms: string[];
+  multiWordTerms: string[];
+} {
+  const exactSet = new Set<string>();
+  const multiSet = new Set<string>();
+
+  const addTerm = (raw: string, allowSingleExact = true) => {
+    const norm = normalizeTrSearch(raw);
+    if (!norm) return;
+    const words = norm.split(' ').filter(Boolean);
+    if (allowSingleExact || words.length >= 2) {
+      exactSet.add(norm);
+    }
+    if (words.length >= 2) {
+      multiSet.add(norm);
+    }
+  };
+
+  const dept = getDepartmentById(departmentId);
+  if (dept) {
+    addTerm(dept.ad, true);
+    addTerm(dept.ad.replace(/\([^)]*\)/g, ''), true);
+    const parenMatches = dept.ad.match(/\(([^)]+)\)/g) ?? [];
+    for (const paren of parenMatches) {
+      const inner = paren.slice(1, -1);
+      for (const alias of inner.split(/[/,-]/)) {
+        const cleaned = normalizeTrSearch(alias);
+        if (cleaned && cleaned !== 'meslek lisesi' && cleaned !== 'ticaret lisesi') {
+          addTerm(cleaned, true);
+        }
+      }
+    }
+    addTerm(dept.id, true);
+    for (const kw of dept.anahtarKelimeler) {
+      const normKw = normalizeTrSearch(kw);
+      if (normKw.split(' ').filter(Boolean).length >= 2) {
+        addTerm(normKw, true);
+      }
+    }
+  } else {
+    addTerm(departmentId, true);
+  }
+
+  return {
+    exactTerms: Array.from(exactSet),
+    multiWordTerms: Array.from(multiSet),
+  };
+}
+
+function doesDepartmentMatch(
+  requiredDept: string,
+  userTerms: { exactTerms: string[]; multiWordTerms: string[] },
+): boolean {
+  const reqNorm = normalizeTrSearch(requiredDept);
+  if (!reqNorm) return false;
+  const reqWordCount = reqNorm.split(' ').filter(Boolean).length;
+
+  for (const exact of userTerms.exactTerms) {
+    if (reqNorm === exact) return true;
+  }
+
+  for (const multi of userTerms.multiWordTerms) {
+    if (reqNorm.includes(multi)) return true;
+    if (reqWordCount >= 2 && multi.includes(reqNorm)) return true;
+  }
+
+  return false;
+}
+
+function evaluateDepartments(
+  requiredDepartments: string[] | undefined,
+  effectiveQualificationCodes: string[],
+  profile: MatchingProfileInput,
+  matchedReasons: string[],
+  missingReasons: string[],
+  unknownReasons: string[],
+): void {
+  if (!requiredDepartments || requiredDepartments.length === 0) return;
+  if (effectiveQualificationCodes.some((code) => GENERAL_EDUCATION_CODES.has(code))) {
+    return;
+  }
+
+  if (!profile.departmentId) {
+    unknownReasons.push(
+      `Bölüm bilgisi profilde belirtilmemiş (Aranan: ${requiredDepartments.join(', ')})`,
+    );
+    return;
+  }
+
+  const userTerms = buildUserDepartmentTerms(profile.departmentId);
+  const matchedDept = requiredDepartments.find((req) =>
+    doesDepartmentMatch(req, userTerms),
+  );
+  if (matchedDept) {
+    matchedReasons.push(`Bölüm şartı uyumlu (${matchedDept})`);
+  } else {
+    missingReasons.push(
+      `Bölüm şartı uyuşmuyor (Aranan: ${requiredDepartments.join(', ')})`,
+    );
+  }
+}
+
 function computeMatchScore(
   matchedCount: number,
   missingCount: number,
@@ -335,16 +483,39 @@ function evaluateSinglePosition(
     }
   }
 
+  evaluateDriverLicenses(
+    announcement.criteria.driverLicenses,
+    profile,
+    matchedReasons,
+    missingReasons,
+  );
+
+  evaluateCertificates(
+    announcement.criteria.certificates,
+    profile,
+    matchedReasons,
+    missingReasons,
+  );
+
   if (position.qualificationCodes.length > 0) {
     evaluateQualificationCodes(
       position.qualificationCodes,
       profile,
-      [],
+      announcement.criteria.certificates,
       matchedReasons,
       missingReasons,
       unknownReasons,
     );
   }
+
+  evaluateDepartments(
+    announcement.criteria.departments,
+    position.qualificationCodes,
+    profile,
+    matchedReasons,
+    missingReasons,
+    unknownReasons,
+  );
 
   const eligible = missingReasons.length === 0 && unknownReasons.length === 0;
   const matchScore = computeMatchScore(
@@ -520,43 +691,52 @@ export function evaluateAnnouncementMatch(
   }
 
   // 5. Driver licenses
-  if (criteria.driverLicenses.length > 0) {
-    const userLicenses = profile.driverLicenses ?? [];
-    const matchedLicense = criteria.driverLicenses.find((req) =>
-      hasDriverLicense(userLicenses, req),
-    );
-    if (matchedLicense) {
-      matchedReasons.push(`Sürücü belgesi uygun (${matchedLicense} sınıfı)`);
+  evaluateDriverLicenses(
+    criteria.driverLicenses,
+    profile,
+    matchedReasons,
+    missingReasons,
+  );
+
+  // 6. Certificates
+  evaluateCertificates(
+    criteria.certificates,
+    profile,
+    matchedReasons,
+    missingReasons,
+  );
+
+  // 7. Max age (if known on both announcement and profile)
+  if (
+    typeof criteria.maxAge === 'number' &&
+    Number.isFinite(criteria.maxAge) &&
+    typeof profile.age === 'number' &&
+    Number.isFinite(profile.age)
+  ) {
+    if (profile.age <= criteria.maxAge) {
+      matchedReasons.push(`Yaş şartı sağlanıyor (<= ${criteria.maxAge})`);
     } else {
       missingReasons.push(
-        `Sürücü belgesi eksik (Aranan: ${criteria.driverLicenses.join(' veya ')})`,
+        `Yaş sınırı aşılıyor (Azami: ${criteria.maxAge}, Profil: ${profile.age})`,
       );
     }
   }
 
-  // 6. Certificates
-  if (criteria.certificates.length > 0) {
-    const missingCerts: string[] = [];
-    const matchedCerts: string[] = [];
-    for (const cert of criteria.certificates) {
-      if (hasCertificate(profile, cert)) {
-        matchedCerts.push(cert);
-      } else {
-        missingCerts.push(cert);
-      }
-    }
-    if (matchedCerts.length > 0 && missingCerts.length === 0) {
-      matchedReasons.push(`Sertifika / belge şartı uygun (${matchedCerts.join(', ')})`);
-    } else if (missingCerts.length > 0) {
-      missingReasons.push(`Eksik sertifika veya belge (${missingCerts.join(', ')})`);
-    }
-  }
-
-  // 7. Qualification codes (education + special codes)
+  // 8. Qualification codes (education + special codes)
   evaluateQualificationCodes(
     criteria.qualificationCodes,
     profile,
     criteria.certificates,
+    matchedReasons,
+    missingReasons,
+    unknownReasons,
+  );
+
+  // 9. Explicit department-name requirements (when no general 4001/3001/2001 code)
+  evaluateDepartments(
+    criteria.departments,
+    criteria.qualificationCodes,
+    profile,
     matchedReasons,
     missingReasons,
     unknownReasons,

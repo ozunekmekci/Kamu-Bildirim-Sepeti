@@ -146,6 +146,11 @@ export interface SavedSearchFilters {
   employmentType?: string;
   examType?: string;
   noticeType?: string;
+  educationLevel?: string;
+  kpssScoreType?: string;
+  maxKpssScore?: string;
+  driverLicense?: string;
+  department?: string;
 }
 
 export interface SavedSearchRecord {

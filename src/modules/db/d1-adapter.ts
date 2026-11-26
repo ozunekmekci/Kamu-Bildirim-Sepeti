@@ -179,6 +179,11 @@ function safeParseSavedSearchFilters(raw: unknown): SavedSearchFilters {
       'employmentType',
       'examType',
       'noticeType',
+      'educationLevel',
+      'kpssScoreType',
+      'maxKpssScore',
+      'driverLicense',
+      'department',
     ] as const) {
       if (typeof record[key] === 'string' && record[key]) {
         filters[key] = record[key];
@@ -205,7 +210,7 @@ function safeParseCriteria(raw: unknown): AnnouncementCriteria {
   if (typeof raw !== 'string' || !raw) return fallback;
   try {
     const parsed = JSON.parse(raw) as Partial<AnnouncementCriteria>;
-    return {
+    const criteria: AnnouncementCriteria = {
       educationLevels: Array.isArray(parsed.educationLevels) ? parsed.educationLevels : [],
       kpssScoreTypes: Array.isArray(parsed.kpssScoreTypes) ? parsed.kpssScoreTypes : [],
       minKpssScore: typeof parsed.minKpssScore === 'number' ? parsed.minKpssScore : null,
@@ -218,6 +223,27 @@ function safeParseCriteria(raw: unknown): AnnouncementCriteria {
         : [],
       summaryLines: Array.isArray(parsed.summaryLines) ? parsed.summaryLines : [],
     };
+    if (Array.isArray(parsed.departments)) {
+      criteria.departments = parsed.departments.filter(
+        (item): item is string => typeof item === 'string' && item.trim().length > 0,
+      );
+    }
+    if (typeof parsed.maxAge === 'number' && Number.isFinite(parsed.maxAge)) {
+      criteria.maxAge = parsed.maxAge;
+    } else if (parsed.maxAge === null) {
+      criteria.maxAge = null;
+    }
+    if (parsed.gender === 'kadin' || parsed.gender === 'erkek' || parsed.gender === 'hepsi') {
+      criteria.gender = parsed.gender;
+    } else if (parsed.gender === null) {
+      criteria.gender = null;
+    }
+    if (typeof parsed.extractedTextExcerpt === 'string') {
+      criteria.extractedTextExcerpt = parsed.extractedTextExcerpt;
+    } else if (parsed.extractedTextExcerpt === null) {
+      criteria.extractedTextExcerpt = null;
+    }
+    return criteria;
   } catch {
     return fallback;
   }
