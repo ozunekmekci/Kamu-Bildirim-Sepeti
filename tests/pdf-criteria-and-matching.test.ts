@@ -128,6 +128,48 @@ describe('extractCriteriaFromText enhancements', () => {
     );
     expect(noisy.departments).toEqual([]);
   });
+
+  it('handles live Bozköy OCR column-interleaved table and ignores oral/practical exam average threshold (60 vs KPSS 65)', () => {
+    const liveBozkoyOcrSnippet = `
+T.C. NİĞDE İLİ BOZKÖY BELEDİYE BAŞKANLIĞI
+İTFAİYE ERİ ALIM İLANI
+
+-Lisans düzeyinde eğitim veren
+kurumların Egzersiz ve Spor
+Bilimleri, Spor Yöneticiliği, E
+İtfaiye | 4 Antrenörlük Eğitimi Kadın/ naz
+1 Eri GİH 11 1 I birind üi P3 65
+ri programlarının birinden mezun rkel
+olmak. poan
+
+En az (C) sınıfı sürücü belgesine sahip olmak.
+30 yaşını doldurmamış olmak.
+
+DEĞERLENDİRME:
+Sınavda başarılı sayılmak için her iki sınavın ortalamasının en az 60 puan olması şarttır.
+`;
+
+    const criteria = extractCriteriaFromText(liveBozkoyOcrSnippet, 'NİĞDE');
+    expect(criteria.kpssScoreTypes).toEqual(['P3']);
+    expect(criteria.minKpssScore).toBe(65);
+    expect(criteria.driverLicenses).toEqual(['C']);
+    expect(criteria.maxAge).toBe(30);
+    expect(criteria.departments).toEqual(
+      expect.arrayContaining([
+        'Egzersiz ve Spor Bilimleri',
+        'Spor Yöneticiliği',
+        'Antrenörlük Eğitimi',
+      ]),
+    );
+    expect(criteria.departments).toHaveLength(3);
+
+    // Oral/practical exam threshold alone must not be misclassified as minKpssScore
+    const evalOnly = extractCriteriaFromText(
+      'Sınavda başarılı sayılmak için her iki sınavın ortalamasının en az 60 puan olması şarttır.',
+      'NİĞDE',
+    );
+    expect(evalOnly.minKpssScore).toBeNull();
+  });
 });
 
 describe('enrichAnnouncementFromPdfText (Bozköy OCR fixture)', () => {

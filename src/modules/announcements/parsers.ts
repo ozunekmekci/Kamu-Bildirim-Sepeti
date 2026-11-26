@@ -191,27 +191,50 @@ function parseValidKpssScore(raw: string | undefined): number | null {
   return val;
 }
 
+const EXAM_PASS_THRESHOLD_CONTEXT_REGEX =
+  /\b(?:sozlu|uygulamali|yazili\s+sinav|mulakat|sinavda\s+basarili|basarili\s+sayil|ortalamasi|ortalamasinin|ortalama|her\s+iki\s+sinav|giris\s+sinav|parkur|fiziki\s+yeterlilik)\b/;
+
+function isExamPassThresholdContext(slice: string): boolean {
+  const normSlice = normalizeTrSearch(slice);
+  if (!normSlice) return false;
+  return EXAM_PASS_THRESHOLD_CONTEXT_REGEX.test(normSlice);
+}
+
 function extractMinKpssScore(text: string): number | null {
-  // 1. Explicit score wording, multi-line & OCR-tolerant (e.g. "En az\n65\npoan", "taban 70 puan")
-  const explicitRegex =
-    /(?:en\s+az|taban|asgari|baraj|kpss[^0-9]{0,25})\s*(\d{2,3}(?:[.,]\d+)?)\s*(?:p[ou]a[nm]|ve\s+[üu]zeri|ve\s+[üu]st[üu])(?:\b|[^\p{L}])/giu;
-  for (const m of text.matchAll(explicitRegex)) {
-    const score = parseValidKpssScore(m[1]);
+  // 1a. KPSS / score-type anchored "en az / taban / asgari / baraj <score>" (multi-line & OCR-tolerant)
+  const kpssAnchoredRegex =
+    /(?:^|[^\p{L}\p{N}])(?:kpss(?:\s*\(b\))?|p-?3|p-?93|p-?94)\b([\s\S]{0,75}?)\b(?:en\s+az|taban(?:\s+puan[ıi]?)?|asgari|baraj)\s*[:\-]?\s*(\d{2,3}(?:[.,]\d+)?)\b(?!\s*(?:\.\s*)?(?:say[ıi]l[ıi]|madde|ya[şs]|g[üu]n|ay|y[ıi]l|adet|ki[şs]i|kadro|derece|cm|kg|tl|%))/giu;
+  for (const m of text.matchAll(kpssAnchoredRegex)) {
+    const between = m[1] ?? '';
+    if (isExamPassThresholdContext(between)) continue;
+    const score = parseValidKpssScore(m[2]);
     if (score !== null) return score;
   }
 
-  // 2. KPSS score type followed by "en az <score>" across spaces or newlines
-  const scoreTypeEnAzRegex =
-    /\b(?:kpss[\s\-/(]*)?(?:p-?3|p-?93|p-?94)\b[\s\S]{0,70}?\ben\s+az\s+(\d{2,3}(?:[.,]\d+)?)\b(?!\s*(?:\.\s*)?(?:say[ıi]l[ıi]|madde|ya[şs]|g[üu]n|ay|y[ıi]l|adet|ki[şs]i|kadro|derece|cm|kg|tl|%))/giu;
-  for (const m of text.matchAll(scoreTypeEnAzRegex)) {
-    const score = parseValidKpssScore(m[1]);
+  // 1b. Direct "KPSS ... <score> puan" wording
+  const directKpssRegex =
+    /\bkpss([^0-9\n\r]{0,30})(\d{2,3}(?:[.,]\d+)?)\s*(?:p[ou]a[nm]|ve\s+[üu]zeri|ve\s+[üu]st[üu])(?:\b|[^\p{L}])/giu;
+  for (const m of text.matchAll(directKpssRegex)) {
+    if (isExamPassThresholdContext(m[1] ?? '')) continue;
+    const score = parseValidKpssScore(m[2]);
     if (score !== null) return score;
   }
 
-  // 3. Compact table row format: "P3 ... 65" on same line or table cell
+  // 2. Compact table row format anchored to P3/P93/P94: e.g. "P3 65", "P3 | 70"
   const tableRowRegex =
     /(?:^|[^\p{L}\p{N}])(?:kpss[\s\-/(]*)?(?:p-?3|p-?93|p-?94)\)?[^\n\r]{0,50}?(?:^|[\s|:/\-\t])(\d{2,3}(?:[.,]\d+)?)\b(?!\s*(?:\.\s*)?(?:say[ıi]l[ıi]|madde|ya[şs]|g[üu]n|ay|y[ıi]l|adet|ki[şs]i|kadro|derece|cm|kg|tl|%))/giu;
   for (const m of text.matchAll(tableRowRegex)) {
+    const score = parseValidKpssScore(m[1]);
+    if (score !== null) return score;
+  }
+
+  // 3. Unanchored "en az / taban / asgari / baraj <score> puan", skipping oral/practical/average pass clauses
+  const genericScoreRegex =
+    /(?:en\s+az|taban|asgari|baraj)\s*[:\-]?\s*(\d{2,3}(?:[.,]\d+)?)\s*(?:p[ou]a[nm]|ve\s+[üu]zeri|ve\s+[üu]st[üu])(?:\b|[^\p{L}])/giu;
+  for (const m of text.matchAll(genericScoreRegex)) {
+    const idx = m.index ?? 0;
+    const preceding = text.slice(Math.max(0, idx - 100), idx);
+    if (isExamPassThresholdContext(preceding)) continue;
     const score = parseValidKpssScore(m[1]);
     if (score !== null) return score;
   }
@@ -302,11 +325,25 @@ const DEPT_GENERIC_ONLY = new Set([
   'on lisans',
   'ortaogretim',
   'lise',
+  'itfaiye',
+  'itfaiye eri',
+  'zabita',
+  'zabita memuru',
+  'memur',
+  'memuru',
+  'eri',
+  'gih',
+  'kadin',
+  'erkek',
+  'naz',
+  'rkel',
+  'poan',
+  'puan',
 ]);
 
 function cleanProseDepartmentCandidate(raw: string): string | null {
   let candidate = raw
-    .replace(/^[\s,.;:•\-–()]+|[\s,.;:•\-–()]+$/g, '')
+    .replace(/^[\s,.;:•\-–()|]+|[\s,.;:•\-–()|]+$/g, '')
     .replace(
       /^(?:yükseköğretim\s+kurumlarının|yükseköğretim\s+kurumların|kurumlarının|kurumların|fakültelerinin|fakültelerin|yüksekokullarının|yüksekokulların|meslek\s+yüksekokullarının|üniversitelerin(?:in)?)\s+/i,
       '',
@@ -316,12 +353,27 @@ function cleanProseDepartmentCandidate(raw: string): string | null {
       '',
     )
     .replace(/^(?:veya|ya\s+da|ve)\s+/i, '')
+    // Strip leading OCR table-column artifacts (stray 1-letter markers, unvan prefixes, row/grade numbers)
+    .replace(/^(?:(?:[A-ZÇĞİÖŞÜa-zçğıöşü]\s+)*(?:itfaiye(?:\s+eri)?|zab[ıi]ta(?:\s+memuru)?)\s+)?(?:\d{1,2}\s+)+/i, '')
+    .replace(/^(?:[A-ZÇĞİÖŞÜa-zçğıöşü]\s+)+(?=[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,})/, '')
     .replace(
       /\s+(?:lisans|önlisans|ön\s+lisans|bölümü|bölümleri|programı|programları|alanı|alanları)$/i,
       '',
     )
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Strip trailing OCR right-column tokens (gender / score / class markers interleaved from adjacent cells)
+  let prev = '';
+  while (candidate !== prev) {
+    prev = candidate;
+    candidate = candidate
+      .replace(
+        /\s+(?:kad[ıi]n\/erkek|erkek\/kad[ıi]n|kad[ıi]n|erkek|en\s+az|naz|rkel|poan|puan|g[iİı]h|th|sh|yh|p-?3|p-?93|p-?94)$/i,
+        '',
+      )
+      .trim();
+  }
 
   // If leading anchor still sits mid-clause (e.g. "... kurumların Egzersiz ve Spor Bilimleri"), trim up to it
   const anchorIdx = candidate.search(
@@ -350,7 +402,7 @@ function cleanProseDepartmentCandidate(raw: string): string | null {
 
 function splitProseDepartmentList(rawList: string): string[] {
   const initialParts = rawList
-    .split(/\s*(?:,|;|\/|\bveya\b|\bya\s+da\b)\s*/i)
+    .split(/\s*(?:,|;|\/|\||\bveya\b|\bya\s+da\b)\s*/i)
     .map((p) => p.trim())
     .filter(Boolean);
 
@@ -395,7 +447,7 @@ function extractDepartmentsFromText(
   // 1. Parse Turkish prose graduation patterns (multi-line flattened)
   const flatText = text.replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
   const proseRegex =
-    /([^.;:\n]{4,280}?)\s+(?:(?:lisans|önlisans|ön\s+lisans)\s+)?(?:programlarının|programlarından|programının|programından|bölümlerinin|bölümlerinden|bölümünün|bölümünden|alanlarının|alanlarından)(?:\s+herhangi)?(?:\s+birinden)?\s+mezun/gi;
+    /([^.;:\n]{4,420}?)\s+(?:(?:lisans|önlisans|ön\s+lisans)\s+)?(?:programlar[ıi]n[ıi]n|programlar[ıi]ndan|program[ıi]n[ıi]n|program[ıi]ndan|b[öo]l[üu]mlerinin|b[öo]l[üu]mlerinden|b[öo]l[üu]m[üu]n[üu]n|b[öo]l[üu]m[üu]nden|alanlar[ıi]n[ıi]n|alanlar[ıi]ndan)(?:\s+herhangi)?(?:\s+birinden)?\s+mezun/gi;
 
   for (const m of flatText.matchAll(proseRegex)) {
     const clause = (m[1] ?? '')
