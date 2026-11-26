@@ -1,7 +1,12 @@
 # Kamu Bildirim Sepeti - İlerleme ve Devir Defteri
 
-**Son Güncelleme:** 2026-11-26  
-**Aktif Faz:** Faz 9 Sprint 1 (Worker Paket Küçültme & `/analiz` SBB Sağlık Paneli - Tamamlandı)
+**Son Güncelleme:** 2026-11-27  
+**Aktif Faz:** Faz 9 Sprint 1 + SBB/RSS Üretim Hata Düzeltmeleri (Tamamlandı ve Canlıda Doğrulandı)
+
+## SBB Referer 404, Stabil ID ve RSS Status Düzeltmeleri (Tamamlandı)
+- [x] **SBB Harici 404 Koruması (`src/modules/announcements/official-link.ts`, `src/modules/announcements/index.ts`, `AnnouncementDetailClient.tsx`, `AnnouncementFeed.tsx`, `kayitli/page.tsx`, `sehir/[slug]/page.tsx`, `kaynak/[slug]/page.tsx`):** `kamuilan.sbb.gov.tr/ilanDetay.aspx?kod=...` yalnızca SBB içi `Referer` kabul ettiğinden, dış tıklamada 404 yerine varsa çapraz kaynak direkt linki veya `https://kamuilan.sbb.gov.tr/` + tek tık `Kurum Adını Kopyala` fallback akışı bağlandı.
+- [x] **SBB Deterministik ID (`src/modules/announcements/connectors.ts`):** `parseSbbKamuIlanHtml` dönen şifreli `kod=` yerine `institution|title|publishedAt|deadlineAt` anahtarı ile kararlı ID ve tekilleştirme yapacak şekilde güncellendi; canlı D1'deki eski rastgele-hash SBB satırları temizlenip `sync:remote` ile `96` kararlı SBB kaydı yüklendi.
+- [x] **RSS Fallback `status` Koruması (`src/modules/db/d1-adapter.ts`, `src/modules/db/memory-adapter.ts`, `tests/bugfix-sbb-links-and-status.test.tsx`):** `enriched` gelecek tarihli ilanların RSS fallback sırasında `status='kapali'` olarak ezilmesi durduruldu (`37/37` test dosyası, `387/387` test, `browser-audit`, canlı `sync:remote` + `POST /api/cron/sync` sonrasında `kariyer_kapisi` `26/26` `acik` ve `sbb` `96/96` korundu).
 
 ## Faz 9 Sprint 1 Tamamlananlar
 - [x] **KPSS Arşiv Özet Ayrıştırması ve Worker Paket Küçültme (`scripts/generate-archive-summary.ts`, `src/data/kpss_archive_summary.json`, `src/modules/analytics/public-insights.ts`, `package.json`, `tests/phase9-bundle-diet.test.ts`):** `npm run build:archive-summary` betiği eklendi; `src/data/kpss_records.json` (9.703 kadro) deterministik olarak `99.249` baytlık (`< 100 KB`) kompakt `src/data/kpss_archive_summary.json` özetine ayrıştırıldı. `src/modules/analytics/public-insights.ts` içindeki `@/data/records` importu tamamen kaldırılarak varsayılan çağrılarda ön hesaplanmış özet, açık `records` parametreli çağrılarda ise dinamik hesaplama korundu (`tests/phase9-bundle-diet.test.ts` ile derin eşitlik doğrulandı).

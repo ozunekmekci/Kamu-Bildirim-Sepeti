@@ -37,6 +37,7 @@ import {
   getAnnouncementFacets,
   getDeadlineDaysLeft,
 } from '@/modules/announcements/service';
+import { resolveOfficialLink } from '@/modules/announcements/official-link';
 import type { MatchEvaluation, SavedSearchFilters } from '@/modules/db/types';
 
 interface AuthUserSummary {
@@ -716,6 +717,9 @@ export function AnnouncementFeed({
     effectiveDrawerAnnouncement?.applyUrl &&
       effectiveDrawerAnnouncement.applyUrl.trim().length > 0
   );
+  const drawerOfficialLink = effectiveDrawerAnnouncement
+    ? resolveOfficialLink(effectiveDrawerAnnouncement)
+    : null;
   const showFreshnessStrip = Boolean(
     freshness && (freshness.lastCheckedAt || freshness.checkpoints.length > 0)
   );
@@ -1502,15 +1506,22 @@ export function AnnouncementFeed({
                 </a>
               )}
               <a
-                href={effectiveDrawerAnnouncement.sourceUrl}
+                href={drawerOfficialLink?.href ?? effectiveDrawerAnnouncement.sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex-1 min-h-[44px] px-4 py-2 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
-                <span>Resmî Kaynağa Git</span>
+                <span>
+                  {drawerOfficialLink?.isPortalFallback ? 'SBB Portalında Aç' : 'Resmî Kaynağa Git'}
+                </span>
                 <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
               </a>
             </div>
+            {drawerOfficialLink?.helperNote && (
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                {drawerOfficialLink.helperNote}
+              </p>
+            )}
           </div>
         </div>
       )}

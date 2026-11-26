@@ -828,11 +828,6 @@ export function parseSbbKamuIlanHtml(
     const rawHref = decodeHtmlEntities(match[2]).trim();
     const innerHtml = match[3];
 
-    const kodMatch = rawHref.match(/[?&]kod=([^&#]+)/i);
-    const dedupeKey = kodMatch ? decodeURIComponent(kodMatch[1]) : rawHref;
-    if (seenKeys.has(dedupeKey)) continue;
-    seenKeys.add(dedupeKey);
-
     const institutionRaw =
       extractTagContent(innerHtml, 'alt_p1') ?? extractTagContent(innerHtml, 'black');
     const institution = institutionRaw ? stripTags(institutionRaw) : '';
@@ -858,6 +853,11 @@ export function parseSbbKamuIlanHtml(
     const publishedAt = range.startDate ?? hintDate ?? refDate;
     const deadlineAt = range.endDate ?? publishedAt;
 
+    // SBB rotates encrypted `kod=` per page load; hash normalized content so IDs stay stable across syncs.
+    const stableKey = `${normalizeTrSearch(institution)}|${normalizeTrSearch(title)}|${publishedAt}|${deadlineAt}`;
+    if (seenKeys.has(stableKey)) continue;
+    seenKeys.add(stableKey);
+
     const sourceUrl = resolveUrl(rawHref, SBB_URL);
     const city = inferCityFromInstitutionOrText(institution, title);
     const classification = classifyAnnouncement({
@@ -868,7 +868,7 @@ export function parseSbbKamuIlanHtml(
     const quota = extractQuota(title);
     const criteria = extractCriteriaFromText(`${institution} ${title}`, city);
 
-    const slugHash = computeContentHash(dedupeKey);
+    const slugHash = computeContentHash(stableKey);
     const externalId = `SBB-${slugHash}`;
     const id = `sbb-${slugHash}`.toLowerCase();
 

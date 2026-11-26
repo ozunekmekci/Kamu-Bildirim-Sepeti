@@ -395,6 +395,8 @@ export class MemoryDbAdapter implements DatabaseAdapter {
             cloned.deadlineAt === cloned.publishedAt
           ) {
             cloned.deadlineAt = existingByExt.deadlineAt;
+            const todayIso = new Date().toISOString().slice(0, 10);
+            cloned.status = cloned.deadlineAt >= todayIso ? 'acik' : 'kapali';
           }
           cloned.quota = existingByExt.quota ?? cloned.quota;
           cloned.summary = existingByExt.summary;

@@ -32,3 +32,10 @@ export {
   getDeadlineDaysLeft,
   syncOfficialSources,
 } from './service';
+export {
+  SBB_PORTAL_URL,
+  isSbbRefererProtectedUrl,
+  resolveVerifiedSourceUrl,
+  resolveOfficialLink,
+} from './official-link';
+export type { ResolvedOfficialLink } from './official-link';

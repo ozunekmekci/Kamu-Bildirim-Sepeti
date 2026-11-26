@@ -856,7 +856,16 @@ export class D1Adapter implements DatabaseAdapter {
                 THEN announcements.city
                 ELSE excluded.city
               END,
-              status = excluded.status,
+              status = CASE
+                WHEN announcements.enrichment_status = 'enriched'
+                  AND excluded.enrichment_status != 'enriched'
+                  AND (announcements.deadline_at > excluded.deadline_at OR excluded.deadline_at = excluded.published_at)
+                THEN CASE
+                  WHEN announcements.deadline_at >= substr(excluded.updated_at, 1, 10) THEN 'acik'
+                  ELSE 'kapali'
+                END
+                ELSE excluded.status
+              END,
               published_at = excluded.published_at,
               deadline_at = CASE
                 WHEN announcements.enrichment_status = 'enriched'

@@ -26,6 +26,10 @@ import type {
   NoticeType,
 } from '@/modules/announcements/types';
 import { getDeadlineDaysLeft } from '@/modules/announcements/service';
+import {
+  resolveOfficialLink,
+  resolveVerifiedSourceUrl,
+} from '@/modules/announcements/official-link';
 import type { MatchEvaluation } from '@/modules/db/types';
 
 export interface AnnouncementDetailClientProps {
@@ -99,6 +103,7 @@ export function AnnouncementDetailClient({ announcement }: AnnouncementDetailCli
   const [matchEval, setMatchEval] = useState<MatchEvaluation | null>(null);
   const [matchLocked, setMatchLocked] = useState<boolean>(false);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [copiedInstitution, setCopiedInstitution] = useState<boolean>(false);
 
   const detail =
     fetchedDetail && fetchedDetail.id === announcement.id
@@ -202,6 +207,19 @@ export function AnnouncementDetailClient({ announcement }: AnnouncementDetailCli
       : null;
   const verifiedSources = detail.verifiedSources ?? [];
   const hasApplyUrl = Boolean(detail.applyUrl && detail.applyUrl.trim().length > 0);
+  const officialLink = resolveOfficialLink(detail);
+
+  const handleCopyInstitution = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(detail.institution);
+        setCopiedInstitution(true);
+        setTimeout(() => setCopiedInstitution(false), 2000);
+      }
+    } catch {
+      // Clipboard API unavailable
+    }
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-6 space-y-5">
@@ -312,7 +330,7 @@ export function AnnouncementDetailClient({ announcement }: AnnouncementDetailCli
             )}
 
             <a
-              href={detail.sourceUrl}
+              href={officialLink.href}
               target="_blank"
               rel="noopener noreferrer"
               className={
@@ -321,10 +339,26 @@ export function AnnouncementDetailClient({ announcement }: AnnouncementDetailCli
                   : 'min-h-[44px] px-4 py-2 bg-[#b91c1c] hover:bg-[#991b1b] dark:bg-[#dc2626] dark:hover:bg-[#b91c1c] text-white text-xs sm:text-sm font-bold inline-flex items-center gap-2'
               }
             >
-              <span>Resmî İlan Metnine Git</span>
+              <span>{officialLink.label}</span>
               <ExternalLink className="w-4 h-4" aria-hidden="true" />
             </a>
+
+            {officialLink.isPortalFallback && (
+              <button
+                type="button"
+                onClick={handleCopyInstitution}
+                className="min-h-[44px] px-4 py-2 border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs sm:text-sm font-semibold inline-flex items-center cursor-pointer"
+              >
+                {copiedInstitution ? 'Kopyalandı' : 'Kurum Adını Kopyala'}
+              </button>
+            )}
           </div>
+
+          {officialLink.helperNote && (
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed pt-1">
+              {officialLink.helperNote}
+            </p>
+          )}
 
           {saveMessage && (
             <p role="status" className="text-xs font-semibold text-amber-800 dark:text-amber-300 pt-1">
@@ -344,7 +378,7 @@ export function AnnouncementDetailClient({ announcement }: AnnouncementDetailCli
               {verifiedSources.map((ref) => (
                 <a
                   key={`${ref.source}-${ref.url}`}
-                  href={ref.url}
+                  href={resolveVerifiedSourceUrl(ref.source, ref.url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="min-h-[44px] px-3 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#111827] hover:border-[#b91c1c] dark:hover:border-[#ef4444] text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5"
