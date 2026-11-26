@@ -1,7 +1,7 @@
 import { MetadataRoute } from 'next';
 import { getCitySeoCatalog } from '@/modules/analytics';
 
-const OFFICIAL_SOURCE_SLUGS = ['kariyer-kapisi', 'iskur', 'resmi-gazete'] as const;
+const OFFICIAL_SOURCE_SLUGS = ['kariyer-kapisi', 'kamuilan-sbb', 'iskur', 'resmi-gazete'] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://kpssportal.pages.dev';

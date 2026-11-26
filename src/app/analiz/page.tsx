@@ -7,7 +7,7 @@ import { getCitySeoCatalog, getPublicInsightsSummary } from '@/modules/analytics
 export const metadata: Metadata = {
   title: 'Kamu İlan Analizi, Kurum ve Şehir İstatistikleri',
   description:
-    'Kariyer Kapısı, İŞKUR ve Resmî Gazete kamu ilanları ile 2024-2026 KPSS merkezi yerleştirme verilerine dayalı kurum, şehir, nitelik kodu ve dönem analizleri.',
+    'Kariyer Kapısı, SBB Kamu İlan, İŞKUR ve Resmî Gazete kamu ilanları ile 2024-2026 KPSS merkezi yerleştirme verilerine dayalı kurum, şehir, nitelik kodu ve dönem analizleri.',
   alternates: {
     canonical: '/analiz',
   },

@@ -212,10 +212,10 @@ function runSuite2() {
 }
 
 // ============================================================================
-// SUITE 3: Eligibility Algebra — Disjunctive (OR) Matching
+// SUITE 3: Eligibility Algebra - Disjunctive (OR) Matching
 // ============================================================================
 function runSuite3() {
-  const suite = 'Suite 3: Eligibility Algebra — Disjunctive OR';
+  const suite = 'Suite 3: Eligibility Algebra - Disjunctive OR';
 
   const multiPost = ['4531', '4539', '4611', '4619'];
 
@@ -236,10 +236,10 @@ function runSuite3() {
 }
 
 // ============================================================================
-// SUITE 4: Eligibility Algebra — Conjunctive (AND) Matching
+// SUITE 4: Eligibility Algebra - Conjunctive (AND) Matching
 // ============================================================================
 function runSuite4() {
-  const suite = 'Suite 4: Eligibility Algebra — Conjunctive AND';
+  const suite = 'Suite 4: Eligibility Algebra - Conjunctive AND';
 
   const complexPost = ['4531', '6225', '6501', '7113', '7225'];
 

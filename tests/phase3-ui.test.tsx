@@ -140,7 +140,7 @@ describe('Kamu Bildirim Sepeti Phase 3 UI Tests', () => {
       ).toBeInTheDocument();
 
       const sourceLinks = screen.getAllByRole('link', { name: /Kaynak İlanlarını İncele/i });
-      expect(sourceLinks).toHaveLength(3);
+      expect(sourceLinks).toHaveLength(4);
 
       unmount();
 
@@ -204,6 +204,7 @@ describe('Kamu Bildirim Sepeti Phase 3 UI Tests', () => {
       const staticParams = await generateKaynakStaticParams();
       expect(staticParams.map((p) => p.slug)).toEqual([
         'kariyer-kapisi',
+        'kamuilan-sbb',
         'iskur',
         'resmi-gazete',
       ]);

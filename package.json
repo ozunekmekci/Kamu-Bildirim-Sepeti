@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "import:data": "npx tsx scripts/import-data.ts",
+    "build:archive-summary": "npx tsx scripts/generate-archive-summary.ts",
     "probe:sources": "npx tsx scripts/probe-sources.ts",
     "sync:remote": "npx tsx scripts/sync-remote.ts"
   },

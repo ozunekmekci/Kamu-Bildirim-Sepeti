@@ -1,5 +1,5 @@
+import archiveSummaryRaw from '@/data/kpss_archive_summary.json';
 import { QUALIFICATIONS_BY_CODE } from '@/data/qualifications';
-import { PLACEMENT_RECORDS } from '@/data/records';
 import { normalizeTrSearch, toTurkishUpper } from '@/lib/turkish';
 import { OFFICIAL_SOURCE_URLS } from '@/modules/announcements/parsers';
 import { INITIAL_ANNOUNCEMENTS } from '@/modules/announcements/seed';
@@ -230,52 +230,77 @@ function buildInstitutionInsights(records: PlacementRecord[], limit = 10): Insti
     .slice(0, limit);
 }
 
-interface CityAccumulator {
+interface ArchiveCitySummary {
   slug: string;
   city: string;
   archivePostsCount: number;
   archiveQuota: number;
-  openAnnouncementsCount: number;
-  scores: number[];
+  avgMinScore: number | null;
+  topInstitutions: InstitutionInsight[];
 }
 
-function buildCityAccumulators(
-  records: PlacementRecord[],
+interface ArchiveSummaryData {
+  totalArchivePosts: number;
+  totalArchiveQuota: number;
+  topInstitutions: InstitutionInsight[];
+  topQualificationCodes: QualificationCodeInsight[];
+  periodBreakdown: PeriodInsight[];
+  cities: ArchiveCitySummary[];
+}
+
+const ARCHIVE_SUMMARY = archiveSummaryRaw as ArchiveSummaryData;
+
+const ARCHIVE_CITIES_BY_SLUG = new Map<string, ArchiveCitySummary>(
+  ARCHIVE_SUMMARY.cities.map((entry) => [entry.slug, entry])
+);
+
+function buildCityEntries(
+  records: PlacementRecord[] | undefined,
   announcements: Announcement[]
-): Map<string, CityAccumulator> {
-  const cityMap = new Map<string, CityAccumulator>();
+): CityInsight[] {
+  const cityMap = new Map<string, CityInsight>();
 
-  const ensureCity = (canonicalName: string): CityAccumulator | null => {
-    if (!canonicalName || isGenericNationalCity(canonicalName)) {
-      return null;
+  if (records !== undefined) {
+    const scoresBySlug = new Map<string, number[]>();
+    for (const record of records) {
+      const canonical = canonicalizeCityName(record.sehir);
+      if (!canonical || isGenericNationalCity(canonical)) continue;
+      const slug = slugifyTurkishCity(canonical);
+      if (!slug || slug === 'turkiye-geneli') continue;
+
+      let entry = cityMap.get(slug);
+      if (!entry) {
+        entry = {
+          slug,
+          city: canonical,
+          archivePostsCount: 0,
+          archiveQuota: 0,
+          openAnnouncementsCount: 0,
+          avgMinScore: null,
+        };
+        cityMap.set(slug, entry);
+        scoresBySlug.set(slug, []);
+      }
+      entry.archivePostsCount += 1;
+      entry.archiveQuota += record.kontenjan || 0;
+      if (record.tabanPuan !== null && !Number.isNaN(record.tabanPuan)) {
+        scoresBySlug.get(slug)!.push(record.tabanPuan);
+      }
     }
-    const slug = slugifyTurkishCity(canonicalName);
-    if (!slug || slug === 'turkiye-geneli') {
-      return null;
+
+    for (const [slug, entry] of cityMap.entries()) {
+      entry.avgMinScore = computeAverageScore(scoresBySlug.get(slug) ?? []);
     }
-    let entry = cityMap.get(slug);
-    if (!entry) {
-      entry = {
-        slug,
-        city: canonicalName,
-        archivePostsCount: 0,
-        archiveQuota: 0,
+  } else {
+    for (const city of ARCHIVE_SUMMARY.cities) {
+      cityMap.set(city.slug, {
+        slug: city.slug,
+        city: city.city,
+        archivePostsCount: city.archivePostsCount,
+        archiveQuota: city.archiveQuota,
         openAnnouncementsCount: 0,
-        scores: [],
-      };
-      cityMap.set(slug, entry);
-    }
-    return entry;
-  };
-
-  for (const record of records) {
-    const canonical = canonicalizeCityName(record.sehir);
-    const entry = ensureCity(canonical);
-    if (!entry) continue;
-    entry.archivePostsCount += 1;
-    entry.archiveQuota += record.kontenjan || 0;
-    if (record.tabanPuan !== null && !Number.isNaN(record.tabanPuan)) {
-      entry.scores.push(record.tabanPuan);
+        avgMinScore: city.avgMinScore,
+      });
     }
   }
 
@@ -285,23 +310,87 @@ function buildCityAccumulators(
     const rawCities = [item.city, ...(item.criteria?.cities ?? [])];
     for (const rawCity of rawCities) {
       const canonical = canonicalizeCityName(rawCity);
-      const entry = ensureCity(canonical);
-      if (!entry || itemSlugsSeen.has(entry.slug)) continue;
-      itemSlugsSeen.add(entry.slug);
+      if (!canonical || isGenericNationalCity(canonical)) continue;
+      const slug = slugifyTurkishCity(canonical);
+      if (!slug || slug === 'turkiye-geneli') continue;
+      if (itemSlugsSeen.has(slug)) continue;
+      itemSlugsSeen.add(slug);
+
+      let entry = cityMap.get(slug);
+      if (!entry) {
+        entry = {
+          slug,
+          city: canonical,
+          archivePostsCount: 0,
+          archiveQuota: 0,
+          openAnnouncementsCount: 0,
+          avgMinScore: null,
+        };
+        cityMap.set(slug, entry);
+      }
       entry.openAnnouncementsCount += 1;
     }
   }
 
-  return cityMap;
+  return Array.from(cityMap.values());
 }
 
 /**
- * Computes aggregate public analytics directly from KPSS placement archive and announcement datasets.
+ * Computes aggregate public analytics from precomputed archive summary or explicit KPSS placement records.
  */
 export function getPublicInsightsSummary(
-  records: PlacementRecord[] = PLACEMENT_RECORDS,
+  records?: PlacementRecord[],
   announcements: Announcement[] = INITIAL_ANNOUNCEMENTS
 ): PublicInsightsSummary {
+  const totalOpenAnnouncements = announcements.filter((a) => a.status === 'acik').length;
+  const categoryBreakdown: CategoryInsight[] = CATEGORY_DEFINITIONS.map(
+    ({ category, label }) => {
+      let openCount = 0;
+      let totalCount = 0;
+      for (const item of announcements) {
+        if (item.category === category) {
+          totalCount += 1;
+          if (item.status === 'acik') {
+            openCount += 1;
+          }
+        }
+      }
+      return {
+        category,
+        label,
+        openCount,
+        totalCount,
+      };
+    }
+  );
+
+  const topCities: CityInsight[] = buildCityEntries(records, announcements)
+    .sort((a, b) => {
+      if (b.archiveQuota !== a.archiveQuota) return b.archiveQuota - a.archiveQuota;
+      if (b.archivePostsCount !== a.archivePostsCount) {
+        return b.archivePostsCount - a.archivePostsCount;
+      }
+      if (b.openAnnouncementsCount !== a.openAnnouncementsCount) {
+        return b.openAnnouncementsCount - a.openAnnouncementsCount;
+      }
+      return a.city.localeCompare(b.city, 'tr-TR');
+    })
+    .slice(0, 15);
+
+  if (records === undefined) {
+    return {
+      totalArchivePosts: ARCHIVE_SUMMARY.totalArchivePosts,
+      totalArchiveQuota: ARCHIVE_SUMMARY.totalArchiveQuota,
+      totalOpenAnnouncements,
+      totalAllAnnouncements: announcements.length,
+      topInstitutions: ARCHIVE_SUMMARY.topInstitutions,
+      topCities,
+      topQualificationCodes: ARCHIVE_SUMMARY.topQualificationCodes,
+      periodBreakdown: ARCHIVE_SUMMARY.periodBreakdown,
+      categoryBreakdown,
+    };
+  }
+
   let totalArchiveQuota = 0;
   const codeCounts = new Map<string, number>();
   const periodMap = new Map<
@@ -332,31 +421,7 @@ export function getPublicInsightsSummary(
     }
   }
 
-  const totalOpenAnnouncements = announcements.filter((a) => a.status === 'acik').length;
-
   const topInstitutions = buildInstitutionInsights(records, 10);
-
-  const cityMap = buildCityAccumulators(records, announcements);
-  const topCities: CityInsight[] = Array.from(cityMap.values())
-    .map((entry) => ({
-      slug: entry.slug,
-      city: entry.city,
-      archivePostsCount: entry.archivePostsCount,
-      archiveQuota: entry.archiveQuota,
-      openAnnouncementsCount: entry.openAnnouncementsCount,
-      avgMinScore: computeAverageScore(entry.scores),
-    }))
-    .sort((a, b) => {
-      if (b.archiveQuota !== a.archiveQuota) return b.archiveQuota - a.archiveQuota;
-      if (b.archivePostsCount !== a.archivePostsCount) {
-        return b.archivePostsCount - a.archivePostsCount;
-      }
-      if (b.openAnnouncementsCount !== a.openAnnouncementsCount) {
-        return b.openAnnouncementsCount - a.openAnnouncementsCount;
-      }
-      return a.city.localeCompare(b.city, 'tr-TR');
-    })
-    .slice(0, 15);
 
   const topQualificationCodes: QualificationCodeInsight[] = Array.from(codeCounts.entries())
     .map(([code, count]) => ({
@@ -379,27 +444,6 @@ export function getPublicInsightsSummary(
     }))
     .sort((a, b) => parsePeriodOrderKey(a.period) - parsePeriodOrderKey(b.period));
 
-  const categoryBreakdown: CategoryInsight[] = CATEGORY_DEFINITIONS.map(
-    ({ category, label }) => {
-      let openCount = 0;
-      let totalCount = 0;
-      for (const item of announcements) {
-        if (item.category === category) {
-          totalCount += 1;
-          if (item.status === 'acik') {
-            openCount += 1;
-          }
-        }
-      }
-      return {
-        category,
-        label,
-        openCount,
-        totalCount,
-      };
-    }
-  );
-
   return {
     totalArchivePosts: records.length,
     totalArchiveQuota,
@@ -417,19 +461,17 @@ export function getPublicInsightsSummary(
  * Returns deterministic Turkish province catalog sorted by combined activity descending.
  */
 export function getCitySeoCatalog(
-  records: PlacementRecord[] = PLACEMENT_RECORDS,
+  records?: PlacementRecord[],
   announcements: Announcement[] = INITIAL_ANNOUNCEMENTS
 ): CitySeoCatalogEntry[] {
-  const cityMap = buildCityAccumulators(records, announcements);
-
-  return Array.from(cityMap.values())
+  return buildCityEntries(records, announcements)
     .map((entry) => ({
       slug: entry.slug,
       city: entry.city,
       openAnnouncementsCount: entry.openAnnouncementsCount,
       archivePostsCount: entry.archivePostsCount,
       archiveQuota: entry.archiveQuota,
-      avgMinScore: computeAverageScore(entry.scores),
+      avgMinScore: entry.avgMinScore,
     }))
     .sort((a, b) => {
       const activityA = a.openAnnouncementsCount * 500 + a.archiveQuota + a.archivePostsCount;
@@ -483,17 +525,51 @@ function getCityArchiveIndex(records: PlacementRecord[]): Map<string, CityArchiv
 export function getCityLandingData(
   slug: string,
   allAnnouncements: Announcement[] = INITIAL_ANNOUNCEMENTS,
-  records: PlacementRecord[] = PLACEMENT_RECORDS
+  records?: PlacementRecord[]
 ): CityLandingData | null {
   const targetSlug = slugifyTurkishCity(slug);
   if (!targetSlug || targetSlug === 'turkiye-geneli' || targetSlug === 'merkez') {
     return null;
   }
 
-  const archiveBucket = getCityArchiveIndex(records).get(targetSlug);
+  let archiveData: {
+    city: string;
+    archivePostsCount: number;
+    archiveQuota: number;
+    avgMinScore: number | null;
+    topInstitutions: InstitutionInsight[];
+  } | null = null;
+
+  if (records !== undefined) {
+    const bucket = getCityArchiveIndex(records).get(targetSlug);
+    if (bucket) {
+      if (!bucket.topInstitutions) {
+        bucket.topInstitutions = buildInstitutionInsights(bucket.records, 10);
+      }
+      archiveData = {
+        city: bucket.city,
+        archivePostsCount: bucket.records.length,
+        archiveQuota: bucket.archiveQuota,
+        avgMinScore: computeAverageScore(bucket.scores),
+        topInstitutions: bucket.topInstitutions,
+      };
+    }
+  } else {
+    const precomputed = ARCHIVE_CITIES_BY_SLUG.get(targetSlug);
+    if (precomputed) {
+      archiveData = {
+        city: precomputed.city,
+        archivePostsCount: precomputed.archivePostsCount,
+        archiveQuota: precomputed.archiveQuota,
+        avgMinScore: precomputed.avgMinScore,
+        topInstitutions: precomputed.topInstitutions,
+      };
+    }
+  }
+
   const cityAnnouncements: Announcement[] = [];
   const nationalAnnouncements: Announcement[] = [];
-  let matchedCityLabel: string | null = archiveBucket ? archiveBucket.city : null;
+  let matchedCityLabel: string | null = archiveData ? archiveData.city : null;
 
   for (const item of allAnnouncements) {
     const rawCities = [item.city, ...(item.criteria?.cities ?? [])];
@@ -524,7 +600,7 @@ export function getCityLandingData(
     return null;
   }
 
-  if (!archiveBucket) {
+  if (!archiveData) {
     return {
       slug: targetSlug,
       city: matchedCityLabel,
@@ -537,19 +613,15 @@ export function getCityLandingData(
     };
   }
 
-  if (!archiveBucket.topInstitutions) {
-    archiveBucket.topInstitutions = buildInstitutionInsights(archiveBucket.records, 10);
-  }
-
   return {
     slug: targetSlug,
     city: matchedCityLabel,
     announcements: sortAnnouncementsForDisplay(cityAnnouncements),
     nationalAnnouncements: sortAnnouncementsForDisplay(nationalAnnouncements),
-    archivePostsCount: archiveBucket.records.length,
-    archiveQuota: archiveBucket.archiveQuota,
-    avgMinScore: computeAverageScore(archiveBucket.scores),
-    topInstitutions: archiveBucket.topInstitutions,
+    archivePostsCount: archiveData.archivePostsCount,
+    archiveQuota: archiveData.archiveQuota,
+    avgMinScore: archiveData.avgMinScore,
+    topInstitutions: archiveData.topInstitutions,
   };
 }
 

@@ -19,7 +19,7 @@ interface KaynakPageProps {
   params: Promise<{ slug: string }>;
 }
 
-const VALID_SOURCE_SLUGS = ['kariyer-kapisi', 'iskur', 'resmi-gazete'] as const;
+const VALID_SOURCE_SLUGS = ['kariyer-kapisi', 'kamuilan-sbb', 'iskur', 'resmi-gazete'] as const;
 
 export async function generateStaticParams() {
   return VALID_SOURCE_SLUGS.map((slug) => ({ slug }));

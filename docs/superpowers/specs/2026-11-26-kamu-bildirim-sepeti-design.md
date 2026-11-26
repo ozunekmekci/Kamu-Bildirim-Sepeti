@@ -1,4 +1,4 @@
-# Kamu Bildirim Sepeti — Faz 1 SaaS Mimari ve Ürün Tasarım Dokümanı
+# Kamu Bildirim Sepeti - Faz 1 SaaS Mimari ve Ürün Tasarım Dokümanı
 
 **Tarih:** 2026-11-26  
 **Marka:** Kamu Bildirim Sepeti (yalnızca bu marka adı kullanılır; hiçbir harici referans uygulama adı kullanılmaz)  
@@ -64,7 +64,7 @@ Kamu Bildirim Sepeti, kamu kurumları tarafından yayımlanan **atama**, **perso
 
 ## 5. Doğrulama Kriterleri
 - Yasaklı referans isim taraması: 0 eşleşme
-- Em-dash (`—`) kontrolü (yeni/güncellenen UI metinlerinde): 0 eşleşme
+- Em-dash (`\u2014`) kontrolü (yeni/güncellenen UI metinlerinde): 0 eşleşme
 - `npm test`: Mevcut 227+ test ve tüm yeni SaaS testleri %100 geçer
 - `npm run lint`: 0 hata
 - `npm run build` ve `npx opennextjs-cloudflare build`: Hatasız tamamlanır

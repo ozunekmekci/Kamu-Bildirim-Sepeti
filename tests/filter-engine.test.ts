@@ -10,7 +10,7 @@ import {
 import { PLACEMENT_RECORDS } from '@/data/records';
 import { PlacementRecord } from '@/types/kpss';
 
-describe('Filter Engine — Multi-Criteria Filtering', () => {
+describe('Filter Engine - Multi-Criteria Filtering', () => {
   const sampleRecords: PlacementRecord[] = [
     {
       id: '2024/1-lisans-1001',

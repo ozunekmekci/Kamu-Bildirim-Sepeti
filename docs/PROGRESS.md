@@ -1,7 +1,20 @@
 # Kamu Bildirim Sepeti - İlerleme ve Devir Defteri
 
 **Son Güncelleme:** 2026-11-26  
-**Aktif Faz:** Faz 7 (Maksimum Veri Kalitesi, 5 Dakikalık Canlı Senkronizasyon, Alt Kadro D1 Şeması ve Premium UI - Tamamlandı)
+**Aktif Faz:** Faz 9 Sprint 1 (Worker Paket Küçültme & `/analiz` SBB Sağlık Paneli - Tamamlandı)
+
+## Faz 9 Sprint 1 Tamamlananlar
+- [x] **KPSS Arşiv Özet Ayrıştırması ve Worker Paket Küçültme (`scripts/generate-archive-summary.ts`, `src/data/kpss_archive_summary.json`, `src/modules/analytics/public-insights.ts`, `package.json`, `tests/phase9-bundle-diet.test.ts`):** `npm run build:archive-summary` betiği eklendi; `src/data/kpss_records.json` (9.703 kadro) deterministik olarak `99.249` baytlık (`< 100 KB`) kompakt `src/data/kpss_archive_summary.json` özetine ayrıştırıldı. `src/modules/analytics/public-insights.ts` içindeki `@/data/records` importu tamamen kaldırılarak varsayılan çağrılarda ön hesaplanmış özet, açık `records` parametreli çağrılarda ise dinamik hesaplama korundu (`tests/phase9-bundle-diet.test.ts` ile derin eşitlik doğrulandı).
+- [x] **`/analiz` SBB Kartı, Canlı Kaynak Sağlığı ve Sitemap (`src/components/PublicInsightsClient.tsx`, `src/app/analiz/page.tsx`, `src/app/kaynak/[slug]/page.tsx`, `src/app/sitemap.ts`, `tests/phase3-ui.test.tsx`, `tests/phase9-ui.test.tsx`):** `PublicInsightsClient` içine 4. resmî kaynak kartı (`kamuilan-sbb` -> `/kaynak/kamuilan-sbb`) ve `/api/sync/status` üzerinden canlı beslenen `Canlı Kaynak Sağlığı ve Ayrıştırıcı Durumu` paneli (yükleniyor, boş, `role="alert"` hata ve `Sağlıklı`/`Uyarı` durum rozetleri) eklendi; `/kaynak/kamuilan-sbb` rotası ve `sitemap.xml` kaydı doğrulandı.
+- [x] **R2 Önbellek Kararı (YAGNI):** OpenNext R2 önbellek katmanı mevcut ISR/SSG trafiği gerektirinceye kadar bilinçli olarak ertelendi.
+
+## Doğrulama Özeti (Faz 9 Sprint 1 Son Doğrulama)
+- [x] Hijyen taraması (`src/`, `tests/`, `scripts/`, `docs/`, `HANDOFF.md`, `AGENTS.md` satır 10+): **0** yasaklı rakip adı, **0** `\u2014`
+- [x] `npm test`: **36/36 test dosyası, 383/383 test geçti (`10.65s`, `EXIT=0`)**
+- [x] `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run build:worker`: **EXIT=0** (54 statik/SSG/dinamik rota)
+- [x] Worker paket küçülmesi (`npx wrangler deploy --dry-run` & `CI=true npm run deploy`): `.open-next/server-functions/default/handler.mjs` **`25,229,987 B` -> `6,757,239 B` (`6.44 MiB`, -%73.2)**; Wrangler Total Upload **`28,838.18 KiB` -> `10,801.50 KiB` (-%62.5)**, gzip **`3,479.21 KiB` -> `2,427.52 KiB` (-%30.2)**, startup **`13 ms`**
+- [x] `node scripts/browser-audit.mjs`: **`[AUDIT PASSED]`** (14 rota HTTP 200, 0 konsol/ağ hatası, 20/20 matriste 0 taşma, 5/5 R-35 etkileşimi geçti)
+- [x] Canlı Workers deploy (`https://kpssportal.ozunekmekci.workers.dev`, Version `12e91f1e-f10e-41a6-8a8d-6d2b8ac59a86`): `/`, `/analiz`, `/kaynak/kamuilan-sbb`, `/sehir/ankara`, `/kpss-arsivi`, `/sitemap.xml` (`kamuilan-sbb` doğrulandı), `/api/health` (`mode: "d1"`, `151` ilan) ve `/api/sync/status` **8/8 HTTP 200**
 
 ## Faz 7 Tamamlananlar
 - [x] **Yapısal Kaynak Bağlayıcıları ve Taksonomi (`src/modules/announcements/{types,taxonomy,connectors,parsers,index}.ts`, `scripts/probe-sources.ts`, `tests/phase7-sources-taxonomy.test.ts`):** Kariyer Kapısı JSON API (`GetIseAlimPage`, `GetIlanPreviewPublic`, `GetAltIlanInfoByIlanIdPublic` + BBCode temizleyici + RSS fallback hata kaydı), SBB Kamu İlan (`kamuilan.sbb.gov.tr` `#nav2` + `#manset` + `İPTAL`/`Düzeltme` tespiti), İŞKUR Kamu Memur (`iskur.gov.tr/ilanlar/kamu-memur-alim-ilanlari/` 18 aktif il), pozitif Resmî Gazete filtresi, 81 il/ilçe/üniversite il çıkarımı, iç istihdam/sınav/duyuru taksonomisi ve çapraz kaynak tekilleştirme eklendi (`probe:sources`: 183 ham -> 145 tekil ilan, %73 il doluluğu).
@@ -125,5 +138,6 @@
 ## Sıradaki Başlangıç Adımı (Yol Haritası Sırasıyla)
 - [x] **Faz 7 Tamamlandı:** Yapısal SBB/İŞKUR Kamu Memur/Kariyer Kapısı API + 179 alt kadro, 5 dk Cron + push-ingest, D1 `0004` ve Premium UI/UX canlıda doğrulandı.
 - [x] **GitHub Actions Otomatik Senkronizasyon Aktivasyonu:** `.github/workflows/sync-official-sources.yml` etkinleştirildi; Cloudflare Worker ve GitHub repo `Secrets` (`CRON_SECRET`) ile `Variables` (`SYNC_TARGET_URL`) senkronize edildi.
-- [ ] **Faz 9 (Orta Öncelik):** Worker paket boyutunu (`28.8 MB`) küçültmek için 9.703 KPSS kaydını ayrıştırma, OpenNext R2 cache katmanı ve `/analiz` içine SBB kartı + canlı ayrıştırıcı alarm paneli eklenmesi.
-- [ ] **Faz 10 (Düşük Öncelik) & Faz 8 (En Son - Demo modunda kalsın):** Programatik `/nitelik/[kod]` + TWA Android yayını; ödeme/e-posta (`Resend`/`Stripe`/`iyzico`) ürün olgunlaşınca aktif edilecek.
+- [x] **Faz 9 Sprint 1 Tamamlandı:** `9.703` KPSS kaydı `99.2 KB` özet JSON'a ayrıştırılarak `handler.mjs` %73.2 küçültüldü (`25.2 MB` -> `6.44 MiB`), `/analiz` SBB kartı ve canlı kaynak sağlık paneli eklendi (`Version 12e91f1e-f10e-41a6-8a8d-6d2b8ac59a86`). OpenNext R2 cache katmanı YAGNI kapsamında ertelendi.
+- [ ] **Faz 9 Sprint 2 (Opsiyonel) veya Faz 10 (Düşük Öncelik):** Kaynak bazlı ayrıştırıcı alarm bildirimi/retry veya programatik `/nitelik/[kod]` + `/kurum/[slug]` SEO ve TWA Android yayını.
+- [ ] **Faz 8 (En Son - Demo modunda kalsın):** Ödeme/e-posta (`Resend`/`Stripe`/`iyzico`) ürün olgunlaşınca aktif edilecek.

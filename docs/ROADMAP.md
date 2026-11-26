@@ -34,6 +34,8 @@
 - **Hallmark + Antislop Premium UI:** Canlı güncellik şeridi, iç kategori sekmeleri (`Memur A/B`, `Sözleşmeli 4/B`, `Akademik`, `Kamu İşçi`, `Askerî & Kolluk`), `Mülakatsız (KPSS)` hızlı filtresi, alt kadrolu slide-over çekmece ve tek tık arama alarmı
 
 ## Öncelik Sırası (Sonraki Fazlar)
-1. **Faz 9 (Orta Öncelik - Ölçeklenebilirlik, Performans ve DevOps):** `9.703` KPSS kaydını D1/compact JSON'a ayırarak Worker paketini küçültme, OpenNext R2 önbellek katmanı, `/analiz` içine SBB kartı ekleme ve kaynak bazlı ayrıştırıcı alarm panosu
+1. **Faz 9 (Orta Öncelik - Ölçeklenebilirlik, Performans ve DevOps):**
+   - [x] **Sprint 1 (Tamamlandı):** `9.703` KPSS kaydını kompakt `kpss_archive_summary.json` (`99.2 KB`) özetine ayırarak Worker paketini küçültme (`handler.mjs` `25.2 MB` -> `6.44 MiB`), `/analiz` içine `kamuilan-sbb` kartı ve `/api/sync/status` kaynak sağlığı paneli ekleme
+   - [ ] **Sprint 2 (Beklemede / YAGNI):** OpenNext R2 önbellek katmanı (ISR trafiği gerektirinceye kadar YAGNI kapsamında ertelendi) ve kaynak bazlı ayrıştırıcı hata webhook/bildirim otomasyonu
 2. **Faz 10 (Düşük Öncelik - Büyüme, Mobil TWA & B2B):** `/nitelik/[kod]` ve `/kurum/[slug]` SEO sayfaları, PWA üzerine Android TWA Google Play yayını, danışmanlık/B2B çoklu aday modu
 3. **Faz 8 (En Son - Demoda Tutulacak / Gelir Aktivasyonu):** `RESEND_API_KEY` + `STRIPE_*` / `iyzico` canlı ödeme ve e-posta anahtarları, Telegram Bot bildirimleri ve tam E2E auth+billing otomasyonu (kullanıcı kararına göre tüm ürün olgunlaşana dek demoda tutulur)
