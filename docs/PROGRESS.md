@@ -1,7 +1,23 @@
 # Kamu Bildirim Sepeti - İlerleme ve Devir Defteri
 
 **Son Güncelleme:** 2026-11-26  
-**Aktif Faz:** Faz 2 (Canlı Sync, E-posta Adaptörleri, Parola Sıfırlama ve Ödeme Adaptörleri)
+**Aktif Faz:** Faz 3 (Web Push, Analitik Panosu, Programatik SEO ve Senaryo Karşılaştırma)
+
+## Faz 3 Tamamlananlar
+- [x] **Veritabanı ve Push Migrasyonu (`migrations/0003_phase3.sql`, `src/modules/db/`):** `push_subscriptions` tablosu (`ON DELETE CASCADE`, tekil `endpoint`) ve `idx_push_subscriptions_user_id` indeksi eklendi; `PushSubscriptionRecord` tipi ile `upsertPushSubscription`, `listPushSubscriptionsByUser`, `deletePushSubscriptionByEndpoint`, `listAllPushSubscriptions` yöntemleri `D1Adapter` ve `MemoryDbAdapter` içine işlendi; her iki `deleteUser` akışı `push_subscriptions` temizliğini içerecek şekilde güncellendi (9 tablo).
+- [x] **Web Push Modülü, Service Worker ve API (`public/sw.js`, `src/modules/push/`, `src/app/api/push/**`):** Çevrimdışı/PWA bildirimleri için hafif `public/sw.js` (`skipWaiting`, `clients.claim`, `push` JSON ayrıştırma + güvenli varsayılanlar, `notificationclick`), `getPublicVapidKey`, HTTPS uç nokta ve `p256dh`/`auth` doğrulamalı `subscribeUserPush`, `unsubscribeUserPush`, `listUserPushSubscriptions`, `dispatchPushNotification`, `WebPushAdapter` seam'i (`NoopWebPushAdapter`, `InMemoryWebPushAdapter`), `GET /api/push/vapid-key` ve oturum korumalı `GET`/`POST`/`DELETE /api/push/subscriptions` uç noktaları eklendi.
+- [x] **Analitik ve Programatik SEO Motoru (`src/modules/analytics/`, `src/app/sitemap.ts`):** `PLACEMENTS`/`INITIAL_ANNOUNCEMENTS`/`QUALIFICATIONS_BY_CODE` verilerinden doğrudan hesaplanan `getPublicInsightsSummary`, 81 ili kapsayan `slugifyTurkishCity` + `getCitySeoCatalog`, `getCityLandingData`, `getSourceLandingData` ve `compareProfileScenarios` eklendi; `sitemap.ts` ana sayfayı `/` indeks `0` konumunda koruyarak `/analiz`, `/kaynak/*` ve ilk 15 `/sehir/*` rotalarını ekledi.
+- [x] **Faz 3 Arayüz Sayfaları ve SEO Rotaları (`src/app/**`, `src/components/**`):** `AppShell` navigasyon/altbilgi bağlantıları genişletildi; `/analiz` (`PublicInsightsClient`), SSG destekli `/sehir/[slug]` (ilk 30 il) ve `/kaynak/[slug]` (3 resmî kaynak) sayfaları bağlayıcı metin uyarısıyla eklendi; `/ayarlar` içine dürüst VAPID durumlu `Tarayıcı Anlık Bildirimleri (Web Push)` kartı ve `/profil` altına canlı `Senaryo Karşılaştırma (Puan / İl / Ehliyet Etkisi)` paneli eklendi.
+
+## Doğrulama Özeti (Faz 3 Son Doğrulama)
+- [x] Yasaklı referans marka taraması: 0 eşleşme (`src/`, `tests/`, `migrations/`, `docs/`, `public/`, `scripts/`)
+- [x] Em-dash (`\u2014`) metin taraması: 0 eşleşme (`src/app/**`, `src/components/**`, `src/modules/**`, `public/sw.js`, `docs/`, `README.md`, `AGENTS.md` satır 10+)
+- [x] SQLite şema doğrulaması (`0001_init.sql` + `0002_phase2.sql` + `0003_phase3.sql`): Bellek içi Python `sqlite3` (`PRAGMA foreign_keys = ON`) üzerinde 11 tablo temiz uygulandı, `PRAGMA foreign_key_check = []`
+- [x] `npx vitest run --no-file-parallelism`: 24/24 test dosyası, 312/312 test geçti (`EXIT=0`, `30.21s`); izole `npx vitest run tests/search-engine-empirical-challenge.test.ts` 32/32 geçti (`EXIT=0`) (Not: varsayılan 24 paralel worker çalıştırmasında CPU çekişmesi nedeniyle mevcut `search-engine-empirical-challenge.test.ts` 5.5 mikro-benchmarkı `< 5.0ms` hedefini `7.48ms` / `8.33ms` ile aştı, Faz 3 koduna dokunulmadı)
+- [x] `npm run lint`: 0 hata (`EXIT=0`)
+- [x] `npm run build`: Next.js 16.3.5 üretim derlemesi başarılı, 53 statik/SSG sayfa derlendi (`EXIT=0`)
+- [x] `npx opennextjs-cloudflare build`: Başarılı, `.open-next/worker.js` üretildi (`2278` bayt, `EXIT=0`)
+- [x] İki eksenli kod incelemesi (`Standards` + `Spec`) ve `antislop` denetimi: Geçti (HTTPS endpoint + key doğrulamalı push uç noktaları, 9 tablolu KVKK silme, sıfır uydurma istatistik, async `params`, çift tema WCAG AA kontrastı ve 44px dokunma hedefleri doğrulandı)
 
 ## Faz 2 Tamamlananlar
 - [x] **Veritabanı ve Migrasyonlar (`migrations/0002_phase2.sql`, `src/modules/db/`):** `users.email_verified_at`, `subscriptions.external_subscription_id`, `auth_tokens` ve `sync_runs` tabloları eklendi; `D1Adapter` ve `MemoryDbAdapter` için `markEmailVerified`, `updateUserPassword`, `createAuthToken`, `findAuthTokenByHash`, `markAuthTokenUsed`, `recordSyncRun` ve `listSyncRuns` yöntemleri uygulandı.
@@ -41,11 +57,12 @@
 
 ## Üretim Ortamı Önkoşulları ve Gizli Değişkenler (Harici Kurulum)
 1. Cloudflare D1 veritabanı oluşturulup gerçek `database_id` değeri `wrangler.jsonc` içine yazılmalı (`REPLACE_WITH_D1_DATABASE_ID` yerine) veya `bash scripts/setup-cloudflare.sh --execute` kullanılmalı.
-2. `npx wrangler d1 migrations apply kamu_bildirim_sepeti --remote` komutu ile `0001_init.sql` ve `0002_phase2.sql` uygulanmalı.
+2. `npx wrangler d1 migrations apply kamu_bildirim_sepeti --remote` komutu ile `0001_init.sql`, `0002_phase2.sql` ve `0003_phase3.sql` uygulanmalı.
 3. Cloudflare Worker ortamında aşağıdaki ortam/gizli değişkenleri tanımlanmalı:
    - Zorunlu güvenlik: `SESSION_SECRET`, `CRON_SECRET`
    - E-posta sağlayıcıları: `RESEND_API_KEY` veya `MAILCHANNELS_API_KEY`, `EMAIL_FROM`
    - Ödeme sağlayıcıları: `PAYMENT_PROVIDER` (`demo` | `stripe` | `iyzico`), `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `IYZICO_API_KEY`, `IYZICO_SECRET_KEY`, `IYZICO_BASE_URL`
+   - Web Push (VAPID): `VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
 
-## Sıradaki Başlangıç Adımı (Faz 3)
-- [ ] Canlı Cloudflare D1 üzerinde `migrations/0001_init.sql` ve `migrations/0002_phase2.sql` uygulayıp `scripts/setup-cloudflare.sh` ile üretim secret yapılandırmasını tamamlayarak ilk canlı `POST /api/cron/sync`, e-posta gönderimi ve ödeme webhook uçtan uca akışını doğrulamak.
+## Sıradaki Başlangıç Adımı (Canlı Kurulum ve Dağıtım)
+- [ ] Canlı Cloudflare D1 üzerinde `wrangler d1 create`, `migrations/0001_init.sql`..`0003_phase3.sql` uygulaması, üretim secret yapılandırması (`SESSION_SECRET`, `CRON_SECRET`, e-posta/ödeme/VAPID anahtarları) ve canlı alan adı dağıtımını tamamlamak.

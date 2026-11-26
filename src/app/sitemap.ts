@@ -1,10 +1,14 @@
 import { MetadataRoute } from 'next';
+import { getCitySeoCatalog } from '@/modules/analytics';
+
+const OFFICIAL_SOURCE_SLUGS = ['kariyer-kapisi', 'iskur', 'resmi-gazete'] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://kpssportal.pages.dev';
   const currentDate = new Date();
+  const topCities = getCitySeoCatalog().slice(0, 15);
 
-  return [
+  const staticEntries: MetadataRoute.Sitemap = [
     {
       url: `${siteUrl}/`,
       lastModified: currentDate,
@@ -15,6 +19,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${siteUrl}/kpss-arsivi`,
       lastModified: currentDate,
       changeFrequency: 'weekly',
+      priority: 0.9,
+    },
+    {
+      url: `${siteUrl}/analiz`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
       priority: 0.9,
     },
     {
@@ -48,4 +58,20 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.5,
     },
   ];
+
+  const sourceEntries: MetadataRoute.Sitemap = OFFICIAL_SOURCE_SLUGS.map((slug) => ({
+    url: `${siteUrl}/kaynak/${slug}`,
+    lastModified: currentDate,
+    changeFrequency: 'daily',
+    priority: 0.8,
+  }));
+
+  const cityEntries: MetadataRoute.Sitemap = topCities.map((entry) => ({
+    url: `${siteUrl}/sehir/${entry.slug}`,
+    lastModified: currentDate,
+    changeFrequency: 'daily',
+    priority: 0.8,
+  }));
+
+  return [...staticEntries, ...sourceEntries, ...cityEntries];
 }

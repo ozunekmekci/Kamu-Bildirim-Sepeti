@@ -14,6 +14,7 @@ import type {
   KpssScoreType,
   NotificationPreferences,
   PlanTier,
+  PushSubscriptionRecord,
   ReminderLog,
   SavedAnnouncementRecord,
   SavedAnnouncementWithItem,
@@ -125,6 +126,18 @@ function mapPrefsRow(row: Record<string, unknown>): NotificationPreferences {
     reminderDaysBefore: Number(row.reminder_days_before ?? 3),
     onlyMatchingProfile: Boolean(Number(row.only_matching_profile)),
     updatedAt: String(row.updated_at),
+  };
+}
+
+function mapPushSubscriptionRow(row: Record<string, unknown>): PushSubscriptionRecord {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    endpoint: String(row.endpoint),
+    p256dh: String(row.p256dh),
+    auth: String(row.auth),
+    userAgent: row.user_agent != null ? String(row.user_agent) : null,
+    createdAt: String(row.created_at),
   };
 }
 
@@ -299,6 +312,7 @@ export class D1Adapter implements DatabaseAdapter {
     if (!existing) return false;
 
     await this.db.batch([
+      this.db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').bind(userId),
       this.db.prepare('DELETE FROM saved_announcements WHERE user_id = ?').bind(userId),
       this.db.prepare('DELETE FROM reminder_logs WHERE user_id = ?').bind(userId),
       this.db.prepare('DELETE FROM notification_prefs WHERE user_id = ?').bind(userId),
@@ -794,5 +808,51 @@ export class D1Adapter implements DatabaseAdapter {
       newAlertsSent: Number(row.new_alerts_sent ?? 0),
       errorsJson: String(row.errors_json ?? '[]'),
     }));
+  }
+
+  async upsertPushSubscription(sub: PushSubscriptionRecord): Promise<PushSubscriptionRecord> {
+    await this.db
+      .prepare(
+        `INSERT INTO push_subscriptions (
+          id, user_id, endpoint, p256dh, auth, user_agent, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(endpoint) DO UPDATE SET
+          user_id = excluded.user_id,
+          p256dh = excluded.p256dh,
+          auth = excluded.auth,
+          user_agent = excluded.user_agent,
+          created_at = excluded.created_at`,
+      )
+      .bind(sub.id, sub.userId, sub.endpoint, sub.p256dh, sub.auth, sub.userAgent, sub.createdAt)
+      .run();
+
+    const row = await this.db
+      .prepare('SELECT * FROM push_subscriptions WHERE endpoint = ? LIMIT 1')
+      .bind(sub.endpoint)
+      .first<Record<string, unknown>>();
+    return row ? mapPushSubscriptionRow(row) : { ...sub };
+  }
+
+  async listPushSubscriptionsByUser(userId: string): Promise<PushSubscriptionRecord[]> {
+    const res = await this.db
+      .prepare('SELECT * FROM push_subscriptions WHERE user_id = ? ORDER BY created_at DESC')
+      .bind(userId)
+      .all<Record<string, unknown>>();
+    return (res.results ?? []).map(mapPushSubscriptionRow);
+  }
+
+  async deletePushSubscriptionByEndpoint(userId: string, endpoint: string): Promise<boolean> {
+    const res = await this.db
+      .prepare('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?')
+      .bind(userId, endpoint)
+      .run();
+    return (res.meta?.changes ?? 0) > 0;
+  }
+
+  async listAllPushSubscriptions(): Promise<PushSubscriptionRecord[]> {
+    const res = await this.db
+      .prepare('SELECT * FROM push_subscriptions ORDER BY created_at DESC')
+      .all<Record<string, unknown>>();
+    return (res.results ?? []).map(mapPushSubscriptionRow);
   }
 }

@@ -2,13 +2,16 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { User, CheckCircle2, AlertCircle, Lock, RefreshCw } from 'lucide-react';
+import { User, CheckCircle2, AlertCircle, Lock, RefreshCw, SlidersHorizontal } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import { DEPARTMENTS } from '@/data/departments';
 import type { MilitaryStatus } from '@/modules/announcements/types';
 import type { EducationLevel, KpssScoreType } from '@/modules/db/types';
+import { compareProfileScenarios, type ProfileScenarioComparison } from '@/modules/analytics';
+import type { MatchingProfileInput } from '@/modules/matching';
 
 const DRIVER_LICENSE_OPTIONS = ['B', 'A2', 'A', 'C', 'D', 'E'];
+const SCENARIO_LICENSE_OPTIONS = ['B', 'D', 'E'];
 const COMMON_CERTIFICATES = ['6225', 'YDS-A', 'YDS-B', 'YDS-C', 'YDS-D'];
 
 const TURKISH_CITIES = [
@@ -44,6 +47,12 @@ export default function ProfilPage() {
   const [customCertificates, setCustomCertificates] = useState('');
   const [qualificationCodesText, setQualificationCodesText] = useState('');
 
+  const [scenarioScore, setScenarioScore] = useState('');
+  const [scenarioCity, setScenarioCity] = useState('');
+  const [scenarioLicenses, setScenarioLicenses] = useState<string[]>([]);
+  const [scenarioError, setScenarioError] = useState<string | null>(null);
+  const [scenarioResult, setScenarioResult] = useState<ProfileScenarioComparison | null>(null);
+
   const applyProfileData = useCallback(
     (data: {
       user?: { fullName?: string | null; phone?: string | null };
@@ -75,6 +84,9 @@ export default function ProfilPage() {
         setCertificates(knownCerts);
         setCustomCertificates(extraCerts.join(', '));
         setQualificationCodesText((p.qualificationCodes ?? []).join(', '));
+        setScenarioScore(p.kpssScore !== null && p.kpssScore !== undefined ? String(p.kpssScore) : '');
+        setScenarioCity(p.residenceCity ?? '');
+        setScenarioLicenses(p.driverLicenses ?? []);
       }
     },
     []
@@ -139,6 +151,75 @@ export default function ProfilPage() {
     setDriverLicenses((prev) =>
       prev.includes(lic) ? prev.filter((item) => item !== lic) : [...prev, lic]
     );
+  };
+
+  const handleToggleScenarioLicense = (lic: string) => {
+    setScenarioLicenses((prev) =>
+      prev.includes(lic) ? prev.filter((item) => item !== lic) : [...prev, lic]
+    );
+  };
+
+  const handleCompareScenario = () => {
+    setScenarioError(null);
+
+    let baseScore: number | null = null;
+    if (kpssScore.trim() !== '') {
+      const parsed = Number(kpssScore.replace(',', '.'));
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+        setScenarioError('Mevcut KPSS puanı 0 ile 100 arasında olmalıdır.');
+        return;
+      }
+      baseScore = parsed;
+    }
+
+    let altScore: number | null = baseScore;
+    if (scenarioScore.trim() !== '') {
+      const parsedAlt = Number(scenarioScore.replace(',', '.'));
+      if (Number.isNaN(parsedAlt) || parsedAlt < 0 || parsedAlt > 100) {
+        setScenarioError('Alternatif KPSS puanı 0 ile 100 arasında olmalıdır.');
+        return;
+      }
+      altScore = parsedAlt;
+    }
+
+    const combinedCerts = Array.from(
+      new Set([
+        ...certificates,
+        ...customCertificates
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean),
+      ])
+    );
+    const codes = Array.from(
+      new Set(
+        qualificationCodesText
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean)
+      )
+    );
+
+    const baseProfile: MatchingProfileInput = {
+      educationLevel: educationLevel || null,
+      departmentId: departmentId || null,
+      kpssScoreType: kpssScoreType || null,
+      kpssScore: baseScore,
+      residenceCity: residenceCity || null,
+      militaryStatus: militaryStatus || null,
+      driverLicenses,
+      certificates: combinedCerts,
+      qualificationCodes: codes,
+    };
+
+    const altProfile: MatchingProfileInput = {
+      ...baseProfile,
+      kpssScore: altScore,
+      residenceCity: scenarioCity || residenceCity || null,
+      driverLicenses: scenarioLicenses,
+    };
+
+    setScenarioResult(compareProfileScenarios(baseProfile, altProfile));
   };
 
   const handleToggleCertificate = (cert: string) => {
@@ -279,6 +360,7 @@ export default function ProfilPage() {
         )}
 
         {!loading && !authRequired && (
+          <>
           <form
             onSubmit={handleSubmit}
             className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-7 space-y-5"
@@ -566,6 +648,186 @@ export default function ProfilPage() {
               </Link>
             </div>
           </form>
+
+          {/* Scenario Comparison Panel */}
+          <section
+            aria-label="Senaryo Karşılaştırma"
+            className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-7 space-y-4"
+          >
+            <div className="border-b border-slate-200 dark:border-slate-800 pb-3 space-y-1">
+              <div className="flex items-center gap-2 text-[#b91c1c] dark:text-[#ef4444]">
+                <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
+                <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Senaryo Karşılaştırma (Puan / İl / Ehliyet Etkisi)
+                </h2>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                Alternatif KPSS puanı, ikamet ili veya sürücü belgesi senaryosuyla kaç açık ilana daha uygun hâle gelebileceğinizi canlı hesaplayın.
+              </p>
+            </div>
+
+            {scenarioError && (
+              <div
+                role="alert"
+                className="p-3 border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-xs text-red-900 dark:text-red-200 flex items-center gap-2"
+              >
+                <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>{scenarioError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label
+                  htmlFor="scenario-kpss-score"
+                  className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5"
+                >
+                  Alternatif KPSS Puanı (0 - 100)
+                </label>
+                <input
+                  id="scenario-kpss-score"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={scenarioScore}
+                  onChange={(e) => setScenarioScore(e.target.value)}
+                  placeholder="Örn. 90.00"
+                  className="w-full min-h-[44px] px-3 py-2 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 tabular-nums"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="scenario-city"
+                  className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5"
+                >
+                  Alternatif İkamet İli
+                </label>
+                <select
+                  id="scenario-city"
+                  value={scenarioCity}
+                  onChange={(e) => setScenarioCity(e.target.value)}
+                  className="w-full min-h-[44px] px-3 py-2 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                >
+                  <option value="">Mevcut İl ile Aynı</option>
+                  {TURKISH_CITIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-2">
+                Alternatif Sürücü Belgesi (B / D / E)
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {SCENARIO_LICENSE_OPTIONS.map((lic) => (
+                  <label
+                    key={lic}
+                    className="min-h-[44px] px-3 py-2 border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs font-semibold inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={scenarioLicenses.includes(lic)}
+                      onChange={() => handleToggleScenarioLicense(lic)}
+                      className="w-4 h-4 accent-[#b91c1c]"
+                    />
+                    <span>Senaryo {lic} Sınıfı</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <button
+                type="button"
+                onClick={handleCompareScenario}
+                className="min-h-[44px] px-5 py-2.5 bg-[#b91c1c] hover:bg-[#991b1b] dark:bg-[#dc2626] dark:hover:bg-[#b91c1c] text-white text-xs sm:text-sm font-bold cursor-pointer"
+              >
+                Senaryoyu Karşılaştır
+              </button>
+            </div>
+
+            {scenarioResult && (
+              <div className="border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-4 space-y-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 tabular-nums">
+                  <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] p-3">
+                    <div className="text-slate-600 dark:text-slate-400">Mevcut Uygun İlan</div>
+                    <div className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+                      {scenarioResult.baseEligibleCount}
+                    </div>
+                  </div>
+                  <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] p-3">
+                    <div className="text-slate-600 dark:text-slate-400">Senaryo Uygun İlan</div>
+                    <div className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+                      {scenarioResult.altEligibleCount}
+                    </div>
+                  </div>
+                  <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] p-3">
+                    <div className="text-slate-600 dark:text-slate-400">Net Fark</div>
+                    <div
+                      className={`text-lg font-bold mt-0.5 ${
+                        scenarioResult.deltaCount > 0
+                          ? 'text-emerald-700 dark:text-emerald-300'
+                          : scenarioResult.deltaCount < 0
+                            ? 'text-red-700 dark:text-red-300'
+                            : 'text-slate-900 dark:text-slate-100'
+                      }`}
+                    >
+                      {scenarioResult.deltaCount > 0
+                        ? `+${scenarioResult.deltaCount} ilan`
+                        : `${scenarioResult.deltaCount} ilan`}
+                    </div>
+                  </div>
+                </div>
+
+                {scenarioResult.gained.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="font-bold text-emerald-800 dark:text-emerald-300">
+                      Kazanılan Açık İlanlar ({scenarioResult.gained.length})
+                    </div>
+                    <ul className="space-y-1">
+                      {scenarioResult.gained.map((item) => (
+                        <li key={item.id}>
+                          <Link
+                            href={`/ilan/${item.id}`}
+                            className="text-slate-800 dark:text-slate-200 hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline"
+                          >
+                            {item.institution}: {item.title}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {scenarioResult.lost.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="font-bold text-red-800 dark:text-red-300">
+                      Kaybedilen Açık İlanlar ({scenarioResult.lost.length})
+                    </div>
+                    <ul className="space-y-1">
+                      {scenarioResult.lost.map((item) => (
+                        <li key={item.id}>
+                          <Link
+                            href={`/ilan/${item.id}`}
+                            className="text-slate-800 dark:text-slate-200 hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline"
+                          >
+                            {item.institution}: {item.title}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </>
         )}
       </div>
     </AppShell>

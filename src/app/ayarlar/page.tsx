@@ -15,9 +15,42 @@ import {
   Moon,
   MailCheck,
   RefreshCw,
+  Smartphone,
 } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import { useTheme } from '@/components/ThemeProvider';
+
+interface PushSubscriptionItem {
+  id: string;
+  endpoint: string;
+  userAgent?: string | null;
+  createdAt: string;
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+function arrayBufferToBase64Url(buffer: ArrayBuffer | null): string {
+  if (!buffer) return '';
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window
+    .btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
 
 interface SyncRunSummary {
   id: string;
@@ -57,6 +90,14 @@ export default function AyarlarPage() {
 
   const [lastSyncRun, setLastSyncRun] = useState<SyncRunSummary | null>(null);
 
+  const [pushSupported, setPushSupported] = useState(false);
+  const [vapidConfigured, setVapidConfigured] = useState(false);
+  const [vapidPublicKey, setVapidPublicKey] = useState<string | null>(null);
+  const [pushSubscriptions, setPushSubscriptions] = useState<PushSubscriptionItem[]>([]);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState<string | null>(null);
+  const [pushError, setPushError] = useState<string | null>(null);
+
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [instantNewAnnouncements, setInstantNewAnnouncements] = useState(false);
   const [deadlineRemindersEnabled, setDeadlineRemindersEnabled] = useState(true);
@@ -69,14 +110,22 @@ export default function AyarlarPage() {
 
   useEffect(() => {
     let active = true;
+    const supported =
+      typeof window !== 'undefined' &&
+      'serviceWorker' in navigator &&
+      'PushManager' in window;
+
     Promise.all([
       fetch('/api/notifications/preferences', { cache: 'no-store' }),
       fetch('/api/billing', { cache: 'no-store' }),
       fetch('/api/auth/me', { cache: 'no-store' }),
       fetch('/api/sync/status', { cache: 'no-store' }),
+      fetch('/api/push/vapid-key', { cache: 'no-store' }).catch(() => null),
+      fetch('/api/push/subscriptions', { cache: 'no-store' }).catch(() => null),
     ])
-      .then(async ([prefsRes, billingRes, meRes, syncRes]) => {
+      .then(async ([prefsRes, billingRes, meRes, syncRes, vapidRes, pushSubRes]) => {
         if (!active) return;
+        setPushSupported(supported);
         if (prefsRes.status === 401) {
           setAuthRequired(true);
           return;
@@ -123,6 +172,20 @@ export default function AyarlarPage() {
             lastRun?: SyncRunSummary | null;
           };
           setLastSyncRun(syncData.lastRun ?? null);
+        }
+        if (vapidRes && vapidRes.ok) {
+          const vapidData = (await vapidRes.json()) as {
+            configured?: boolean;
+            publicKey?: string | null;
+          };
+          setVapidConfigured(Boolean(vapidData.configured && vapidData.publicKey));
+          setVapidPublicKey(vapidData.publicKey ?? null);
+        }
+        if (pushSubRes && pushSubRes.ok) {
+          const subData = (await pushSubRes.json()) as {
+            subscriptions?: PushSubscriptionItem[];
+          };
+          setPushSubscriptions(Array.isArray(subData.subscriptions) ? subData.subscriptions : []);
         }
       })
       .catch(() => {
@@ -203,6 +266,129 @@ export default function AyarlarPage() {
       setError('Sunucuya bağlanılamadı.');
     } finally {
       setSavingPrefs(false);
+    }
+  };
+
+  const handleEnablePush = async () => {
+    setPushError(null);
+    setPushMessage(null);
+
+    if (!pushSupported) {
+      setPushError('Tarayıcınız Web Push bildirimlerini desteklemiyor.');
+      return;
+    }
+    if (!vapidConfigured || !vapidPublicKey) {
+      setPushError('Sunucu VAPID anahtarı henüz tanımlanmadı.');
+      return;
+    }
+
+    setPushBusy(true);
+    try {
+      if ('Notification' in window && typeof Notification.requestPermission === 'function') {
+        const permission = await Notification.requestPermission();
+        if (permission === 'denied') {
+          setPushError('Tarayıcı bildirim izni reddedildi. Tarayıcı ayarlarından izin verebilirsiniz.');
+          return;
+        }
+      }
+
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      const readyReg = navigator.serviceWorker.ready
+        ? await navigator.serviceWorker.ready
+        : reg;
+
+      let subscription = await readyReg.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await readyReg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
+        });
+      }
+
+      const json = typeof subscription.toJSON === 'function' ? subscription.toJSON() : {};
+      const endpoint = subscription.endpoint || json.endpoint || '';
+      const p256dh =
+        json.keys?.p256dh ||
+        arrayBufferToBase64Url(
+          typeof subscription.getKey === 'function' ? subscription.getKey('p256dh') : null
+        );
+      const auth =
+        json.keys?.auth ||
+        arrayBufferToBase64Url(
+          typeof subscription.getKey === 'function' ? subscription.getKey('auth') : null
+        );
+
+      if (!endpoint || !p256dh || !auth) {
+        setPushError('Tarayıcı abonelik anahtarları oluşturulamadı.');
+        return;
+      }
+
+      const res = await fetch('/api/push/subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint,
+          keys: { p256dh, auth },
+          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+        }),
+      });
+      const data = (await res.json()) as {
+        subscription?: PushSubscriptionItem;
+        error?: string;
+      };
+      if (!res.ok) {
+        setPushError(data.error || 'Tarayıcı bildirimi kaydedilemedi.');
+        return;
+      }
+
+      if (data.subscription) {
+        setPushSubscriptions((prev) => {
+          const rest = prev.filter((item) => item.endpoint !== data.subscription!.endpoint);
+          return [data.subscription!, ...rest];
+        });
+      }
+      setPushMessage('Tarayıcı anlık bildirimleri etkinleştirildi.');
+    } catch {
+      setPushError('Tarayıcı bildirim aboneliği başlatılırken hata oluştu.');
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleDisablePush = async (endpoint: string) => {
+    setPushError(null);
+    setPushMessage(null);
+    setPushBusy(true);
+    try {
+      const res = await fetch('/api/push/subscriptions', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setPushError(data.error || 'Abonelik kaldırılamadı.');
+        return;
+      }
+
+      if (pushSupported && typeof navigator.serviceWorker.getRegistration === 'function') {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+          const sub = await reg?.pushManager?.getSubscription();
+          if (sub && sub.endpoint === endpoint) {
+            await sub.unsubscribe();
+          }
+        } catch {
+          // Local SW unsubscribe is best-effort
+        }
+      }
+
+      setPushSubscriptions((prev) => prev.filter((item) => item.endpoint !== endpoint));
+      setPushMessage('Tarayıcı anlık bildirim aboneliği kaldırıldı.');
+    } catch {
+      setPushError('Sunucuya bağlanılamadı.');
+    } finally {
+      setPushBusy(false);
     }
   };
 
@@ -520,6 +706,111 @@ export default function AyarlarPage() {
                   </button>
                 </div>
               </form>
+            </section>
+
+            {/* Browser Web Push Notifications */}
+            <section className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-[#b91c1c] dark:text-[#ef4444]" aria-hidden="true" />
+                  <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    Tarayıcı Anlık Bildirimleri (Web Push)
+                  </h2>
+                </div>
+                <span
+                  className={`text-xs font-bold px-2.5 py-0.5 border tabular-nums ${
+                    pushSubscriptions.length > 0
+                      ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200'
+                      : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {pushSubscriptions.length > 0
+                    ? `Aktif (${pushSubscriptions.length} Cihaz)`
+                    : 'Kapalı'}
+                </span>
+              </div>
+
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                Yeni resmî ilanlar ve yaklaşan son başvuru tarihleri için tarayıcınız üzerinden anlık bildirim alabilirsiniz.
+              </p>
+
+              {pushError && (
+                <div
+                  role="alert"
+                  className="p-3 border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-xs text-red-900 dark:text-red-200 flex items-center gap-2"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>{pushError}</span>
+                </div>
+              )}
+
+              {pushMessage && (
+                <div
+                  role="status"
+                  className="p-3 border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>{pushMessage}</span>
+                </div>
+              )}
+
+              {!pushSupported ? (
+                <div className="p-3 border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-700 dark:text-slate-300">
+                  Mevcut tarayıcı ortamınız Service Worker veya PushManager API desteğine sahip değil.
+                </div>
+              ) : !vapidConfigured || !vapidPublicKey ? (
+                <div
+                  role="status"
+                  className="p-3 border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-xs text-amber-950 dark:text-amber-100"
+                >
+                  Sunucu VAPID anahtarı henüz tanımlanmadı. Ortam değişkenleri yapılandırıldığında tarayıcı bildirimleri buradan etkinleştirilebilir.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pushSubscriptions.length > 0 && (
+                    <ul className="space-y-2">
+                      {pushSubscriptions.map((sub) => (
+                        <li
+                          key={sub.id || sub.endpoint}
+                          className="border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3 flex flex-wrap items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                              {sub.endpoint}
+                            </div>
+                            <div className="text-slate-600 dark:text-slate-400 tabular-nums">
+                              Kayıt: {new Date(sub.createdAt).toLocaleString('tr-TR')}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={pushBusy}
+                            onClick={() => handleDisablePush(sub.endpoint)}
+                            className="min-h-[44px] px-3 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-bold cursor-pointer disabled:opacity-60"
+                          >
+                            Aboneliği Kapat
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      disabled={pushBusy}
+                      onClick={handleEnablePush}
+                      className="min-h-[44px] px-5 py-2 bg-[#b91c1c] hover:bg-[#991b1b] dark:bg-[#dc2626] dark:hover:bg-[#b91c1c] disabled:opacity-60 text-white text-xs sm:text-sm font-bold cursor-pointer"
+                    >
+                      {pushBusy
+                        ? 'İşleniyor...'
+                        : pushSubscriptions.length > 0
+                          ? 'Bu Cihazı Yeniden Eşitle'
+                          : 'Tarayıcı Bildirimlerini Etkinleştir'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </section>
 
             {/* Official Source Sync Status */}

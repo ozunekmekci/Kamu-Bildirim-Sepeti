@@ -129,6 +129,16 @@ export interface ReminderLog {
   sentAt: string;
 }
 
+export interface PushSubscriptionRecord {
+  id: string;
+  userId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  userAgent: string | null;
+  createdAt: string;
+}
+
 export interface CreateUserInput {
   id: string;
   email: string;
@@ -201,4 +211,9 @@ export interface DatabaseAdapter {
 
   recordSyncRun(run: SyncRun): Promise<SyncRun>;
   listSyncRuns(limit?: number): Promise<SyncRun[]>;
+
+  upsertPushSubscription(sub: PushSubscriptionRecord): Promise<PushSubscriptionRecord>;
+  listPushSubscriptionsByUser(userId: string): Promise<PushSubscriptionRecord[]>;
+  deletePushSubscriptionByEndpoint(userId: string, endpoint: string): Promise<boolean>;
+  listAllPushSubscriptions(): Promise<PushSubscriptionRecord[]>;
 }

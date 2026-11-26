@@ -39,15 +39,18 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 | Identity | `src/modules/identity/` (`crypto.ts`, `service.ts`, `index.ts`) | Edge-compatible Web Crypto PBKDF2 + HMAC-SHA256 `kbs_session` cookies, registration/login, email verification & password reset tokens, profile management, KVKK cascade deletion |
 | Tracking | `src/modules/tracking/` (`email-adapters.ts`, `service.ts`, `index.ts`) | Saved announcements, free/premium save limits, notification preferences, reminder & new-announcement deduplication behind `Resend`/`MailChannels`/`Noop` `EmailAdapter` seam |
 | Billing | `src/modules/billing/` (`payment-adapters.ts`, `service.ts`, `index.ts`) | `EntitlementGate` (Free: 15 visible / 10 saved; Premium: unlimited + profile match + instant alerts) and `Demo`/`Stripe`/`iyzico` `PaymentAdapter` seam with fail-closed webhook verification |
-| D1 Schema | `migrations/0001_init.sql`, `migrations/0002_phase2.sql` | SQLite/D1 schema (`users`, `sessions`, `auth_tokens`, `user_profiles`, `announcements`, `saved_announcements`, `notification_prefs`, `reminder_logs`, `subscriptions`, `sync_runs`) with `ON DELETE CASCADE` |
-| API Routes | `src/app/api/**` | `auth/{register,login,logout,me,verify-email,resend-verification,forgot-password,reset-password}`, `profile`, `account`, `announcements/{,id,matched}`, `saved`, `notifications/preferences`, `billing/{,plan,checkout,webhook/stripe,webhook/iyzico}`, `cron/sync`, `sync/status` |
-| App Routes | `src/app/**` | `/`, `/ilan/[id]`, `/kayitli`, `/profil`, `/ayarlar`, `/premium`, `/giris`, `/kayit`, `/sifre-sifirla`, `/eposta-dogrula`, `/kpss-arsivi`, `/gizlilik-politikasi`, `/kullanim-kosullari` |
-| Deploy Script | `scripts/setup-cloudflare.sh` | Dry-run-by-default Wrangler D1 setup, `0001+0002` migration, and Worker secret setup script |
+| Web Push & SW | `src/modules/push/` (`service.ts`, `index.ts`), `public/sw.js` | VAPID public key config, HTTPS push subscription validation, `WebPushAdapter` seam (`NoopWebPushAdapter`, `InMemoryWebPushAdapter`), and lightweight PWA Service Worker |
+| Analytics & SEO | `src/modules/analytics/` (`public-insights.ts`, `index.ts`), `src/app/sitemap.ts` | Dataset-derived insights (`getPublicInsightsSummary`), 81-province SEO catalog (`getCitySeoCatalog`, `getCityLandingData`, `getSourceLandingData`), scenario delta (`compareProfileScenarios`), and expanded sitemap |
+| D1 Schema | `migrations/0001_init.sql`, `migrations/0002_phase2.sql`, `migrations/0003_phase3.sql` | SQLite/D1 schema (`users`, `sessions`, `auth_tokens`, `user_profiles`, `announcements`, `saved_announcements`, `notification_prefs`, `reminder_logs`, `subscriptions`, `sync_runs`, `push_subscriptions`) with `ON DELETE CASCADE` |
+| API Routes | `src/app/api/**` | `auth/{register,login,logout,me,verify-email,resend-verification,forgot-password,reset-password}`, `profile`, `account`, `announcements/{,id,matched}`, `saved`, `notifications/preferences`, `billing/{,plan,checkout,webhook/stripe,webhook/iyzico}`, `push/{vapid-key,subscriptions}`, `cron/sync`, `sync/status` |
+| App Routes | `src/app/**` | `/`, `/analiz`, `/sehir/[slug]`, `/kaynak/[slug]`, `/ilan/[id]`, `/kayitli`, `/profil`, `/ayarlar`, `/premium`, `/giris`, `/kayit`, `/sifre-sifirla`, `/eposta-dogrula`, `/kpss-arsivi`, `/gizlilik-politikasi`, `/kullanim-kosullari` |
+| Deploy Script | `scripts/setup-cloudflare.sh` | Dry-run-by-default Wrangler D1 setup, migration, and Worker secret setup script |
 
-## Phase 2 Environment Variables
+## Phase 2 & Phase 3 Environment Variables
 - Auth & Cron: `SESSION_SECRET`, `CRON_SECRET`
 - Email: `RESEND_API_KEY`, `MAILCHANNELS_API_KEY`, `EMAIL_FROM`
 - Billing & Webhooks: `PAYMENT_PROVIDER`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `IYZICO_API_KEY`, `IYZICO_SECRET_KEY`, `IYZICO_BASE_URL`
+- Web Push (VAPID): `VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
 
 ## Verification & Commit Convention
 Every milestone must pass all four checks before updating `docs/PROGRESS.md` and committing:

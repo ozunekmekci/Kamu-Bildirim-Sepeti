@@ -13,6 +13,7 @@ import {
   Settings,
   Sparkles,
   Archive,
+  BarChart3,
   LogOut,
   X,
   ExternalLink,
@@ -35,6 +36,7 @@ export interface AppShellProps {
 const NAV_LINKS = [
   { href: '/', label: 'İlan Akışı', icon: Bell },
   { href: '/kpss-arsivi', label: 'KPSS Arşivi', icon: Archive },
+  { href: '/analiz', label: 'Analiz', icon: BarChart3 },
   { href: '/kayitli', label: 'Kayıtlılar', icon: Bookmark },
   { href: '/profil', label: 'Profilim', icon: User },
   { href: '/premium', label: 'Planlar', icon: Sparkles },
@@ -348,20 +350,32 @@ export default function AppShell({ children, initialUser = null }: AppShellProps
               <h2 className="font-bold text-sm text-slate-900 dark:text-slate-100 mb-2">
                 Platform ve Hukuki Metinler
               </h2>
-              <nav aria-label="Alt Bilgi Bağlantıları" className="flex flex-wrap gap-x-4 gap-y-2">
-                <Link href="/kpss-arsivi" className="hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
+              <nav aria-label="Alt Bilgi Bağlantıları" className="flex flex-wrap gap-x-4 gap-y-1">
+                <Link href="/kpss-arsivi" className="min-h-[44px] inline-flex items-center hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
                   KPSS Arşivi
                 </Link>
-                <Link href="/premium" className="hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
+                <Link href="/analiz" className="min-h-[44px] inline-flex items-center hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
+                  Analiz
+                </Link>
+                <Link href="/sehir/ankara" className="min-h-[44px] inline-flex items-center hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
+                  Ankara İlanları
+                </Link>
+                <Link href="/sehir/istanbul" className="min-h-[44px] inline-flex items-center hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
+                  İstanbul İlanları
+                </Link>
+                <Link href="/kaynak/kariyer-kapisi" className="min-h-[44px] inline-flex items-center hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
+                  Kariyer Kapısı
+                </Link>
+                <Link href="/premium" className="min-h-[44px] inline-flex items-center hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
                   Planlar
                 </Link>
-                <Link href="/gizlilik-politikasi" className="hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
+                <Link href="/gizlilik-politikasi" className="min-h-[44px] inline-flex items-center hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
                   Gizlilik Politikası (KVKK)
                 </Link>
-                <Link href="/kullanim-kosullari" className="hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
+                <Link href="/kullanim-kosullari" className="min-h-[44px] inline-flex items-center hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
                   Kullanım Koşulları
                 </Link>
-                <Link href="/ayarlar" className="hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
+                <Link href="/ayarlar" className="min-h-[44px] inline-flex items-center hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline">
                   Veri ve Hesap Silme
                 </Link>
               </nav>

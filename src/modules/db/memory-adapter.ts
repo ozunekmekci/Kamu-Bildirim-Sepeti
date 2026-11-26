@@ -6,6 +6,7 @@ import type {
   CreateUserInput,
   DatabaseAdapter,
   NotificationPreferences,
+  PushSubscriptionRecord,
   ReminderLog,
   SavedAnnouncementRecord,
   SavedAnnouncementWithItem,
@@ -45,6 +46,7 @@ export class MemoryDbAdapter implements DatabaseAdapter {
   private reminderLogs = new Map<string, ReminderLog>();
   private subscriptions = new Map<string, Subscription>();
   private syncRuns = new Map<string, SyncRun>();
+  private pushSubscriptions = new Map<string, PushSubscriptionRecord>();
 
   constructor(seedAnnouncements: Announcement[] = INITIAL_ANNOUNCEMENTS) {
     for (const item of seedAnnouncements) {
@@ -64,6 +66,7 @@ export class MemoryDbAdapter implements DatabaseAdapter {
     this.reminderLogs.clear();
     this.subscriptions.clear();
     this.syncRuns.clear();
+    this.pushSubscriptions.clear();
     for (const item of seedAnnouncements) {
       this.announcements.set(item.id, cloneAnnouncement(item));
     }
@@ -183,6 +186,13 @@ export class MemoryDbAdapter implements DatabaseAdapter {
     }
 
     this.subscriptions.delete(userId);
+
+    for (const [endpoint, sub] of this.pushSubscriptions.entries()) {
+      if (sub.userId === userId) {
+        this.pushSubscriptions.delete(endpoint);
+      }
+    }
+
     return true;
   }
 
@@ -419,5 +429,35 @@ export class MemoryDbAdapter implements DatabaseAdapter {
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
       .slice(0, safeLimit)
       .map((run) => ({ ...run }));
+  }
+
+  async upsertPushSubscription(sub: PushSubscriptionRecord): Promise<PushSubscriptionRecord> {
+    const existing = this.pushSubscriptions.get(sub.endpoint);
+    const saved: PushSubscriptionRecord = existing
+      ? { ...sub, id: existing.id }
+      : { ...sub };
+    this.pushSubscriptions.set(saved.endpoint, saved);
+    return { ...saved };
+  }
+
+  async listPushSubscriptionsByUser(userId: string): Promise<PushSubscriptionRecord[]> {
+    return Array.from(this.pushSubscriptions.values())
+      .filter((sub) => sub.userId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((sub) => ({ ...sub }));
+  }
+
+  async deletePushSubscriptionByEndpoint(userId: string, endpoint: string): Promise<boolean> {
+    const existing = this.pushSubscriptions.get(endpoint);
+    if (!existing || existing.userId !== userId) {
+      return false;
+    }
+    return this.pushSubscriptions.delete(endpoint);
+  }
+
+  async listAllPushSubscriptions(): Promise<PushSubscriptionRecord[]> {
+    return Array.from(this.pushSubscriptions.values())
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((sub) => ({ ...sub }));
   }
 }
