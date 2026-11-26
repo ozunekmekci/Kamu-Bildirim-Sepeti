@@ -898,7 +898,7 @@ export function parseSbbKamuIlanHtml(
           url: sourceUrl,
         },
       ],
-      enrichmentStatus: 'enriched',
+      enrichmentStatus: 'pending',
       contentHash: computeContentHash({ externalId, institution, title, deadlineAt, city }),
       isDemo: false,
     });
@@ -1144,7 +1144,7 @@ export function parseIskurCityTableHtml(
           url: sourceUrl,
         },
       ],
-      enrichmentStatus: 'enriched',
+      enrichmentStatus: 'pending',
       contentHash: computeContentHash({ externalId, institution, title, deadlineAt, canonicalCity }),
       isDemo: false,
     });

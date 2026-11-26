@@ -34,6 +34,10 @@ jobs:
         if: steps.check_secret.outputs.enabled == 'true'
         run: npm ci
 
+      - name: Install PDF and Turkish OCR tools
+        if: steps.check_secret.outputs.enabled == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-tur
+
       - name: Run remote sync and ingest
         if: steps.check_secret.outputs.enabled == 'true'
         env:
