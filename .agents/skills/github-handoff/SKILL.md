@@ -69,6 +69,13 @@ Single source of truth for cross-session and cross-agent continuity on GitHub: m
 3. **Honor Settled Decisions:** Adopt `Decisions & Constraints` as binding unless the user explicitly overrides them.
 4. **Act on Step #1 Immediately:** Start executing `Next Atomic Steps` #1 without asking redundant orientation questions.
 
+## Automatic Lifecycle Hooks
+
+This skill pairs with `.agents/hooks.json` (and global `~/.gemini/config/hooks.json`):
+- `SessionStart` (`session-start-resume.mjs`): Automatically injects `HANDOFF.md` + live `git status`/`branch`/`HEAD` when a new session opens.
+- `PreInvocation` (`pre-invocation-handoff.mjs`): Every 12 model invocations, nudges the agent to checkpoint and push if dirty or unpushed work exists.
+- `Stop` (`stop-handoff-snapshot.mjs`): Runs with zero LLM tokens if the loop halts on `MAX_TOKEN_BUDGET_EXCEEDED`, `ERROR`, or with dirty/unpushed changes, updating `<!-- AUTO-SNAPSHOT:START -->...<!-- AUTO-SNAPSHOT:END -->` in `HANDOFF.md` cleanly.
+
 ## Red Flags (Never Do These)
 
 - Summarizing state from memory without reading git status and test results.

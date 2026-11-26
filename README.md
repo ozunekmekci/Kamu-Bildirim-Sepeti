@@ -93,7 +93,8 @@ npm run deploy
 
 ## Dokümantasyon ve Ajan Devir Dosyaları
 - [HANDOFF.md](HANDOFF.md): Yeni oturum / farklı AI ajanları için 30 saniyelik aktif durum, kararlar ve sonraki adımlar devir özeti
-- [.agents/skills/github-handoff/SKILL.md](.agents/skills/github-handoff/SKILL.md): Repo-içi GitHub handoff ve resume ajan yeteneği (`github-handoff`)
+- [GEMINI.md](GEMINI.md) ve [CLAUDE.md](CLAUDE.md): Antigravity/Gemini CLI/Claude Code oturum açılışında `AGENTS.md` ve `HANDOFF.md` dosyalarını otomatik bağlayan kök kurallar
+- [.agents/hooks.json](.agents/hooks.json) ve [.agents/skills/github-handoff/SKILL.md](.agents/skills/github-handoff/SKILL.md): Otomatik `SessionStart` devam enjeksiyonu, 12 adımda bir kontrol uyarısı ve token bitiminde sıfır-token `Stop` anlık durum kaydı (`github-handoff`)
 - [AGENTS.md](AGENTS.md): Ajan kuralları, mimari modül haritası ve doğrulama sözleşmesi
 - [docs/PROGRESS.md](docs/PROGRESS.md): Canlı ilerleme ve faz bazlı devir defteri
 - [docs/ROADMAP.md](docs/ROADMAP.md): Faz 1-5 ürün ve altyapı yol haritası

@@ -1,0 +1,25 @@
+{
+  "github-handoff": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node ./skills/github-handoff/scripts/session-start-resume.mjs",
+        "timeout": 10
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ./skills/github-handoff/scripts/pre-invocation-handoff.mjs",
+        "timeout": 10
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ./skills/github-handoff/scripts/stop-handoff-snapshot.mjs",
+        "timeout": 10
+      }
+    ]
+  }
+}

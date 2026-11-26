@@ -1,4 +1,5 @@
 @AGENTS.md
+@HANDOFF.md
 
 Before making any edits in this repository:
 1. Read `HANDOFF.md` and `.agents/skills/github-handoff/SKILL.md` for current state and GitHub continuity workflow.
