@@ -15,21 +15,20 @@
 
 ## Completed Since Last Handoff (Faz 7)
 - **Kaynaklar & Taksonomi (`src/modules/announcements/{types,taxonomy,connectors,parsers}.ts`):** Kariyer Kapisi JSON API (`GetIseAlimPage`, `GetIlanPreviewPublic`, `GetAltIlanInfoByIlanIdPublic`), SBB (`kamuilan.sbb.gov.tr`), ISKUR Kamu Memur (`iskur.gov.tr/ilanlar/kamu-memur-alim-ilanlari/`), RG pozitif filtresi, 81 il/ilce/universite il cikarimi, ic taksonomi ve capraz tekillestirme.
-- **D1 `0004` & 5 Dk Senkronizasyon (`migrations/0004_phase7_enrichment.sql`, `src/modules/db/`, `service.ts`, `matching/engine.ts`, `api/**`):** `announcement_positions` (179 satir), `source_checkpoints`, `saved_searches`, 10-tablo KVKK silme, monotonik `enriched` koruma, devre kesicili `8.2s` Worker cron, `POST /api/cron/ingest`, `scripts/sync-remote.ts`, `docs/examples/sync-official-sources.yml`, pozisyon bazli Matching v2.
+- **D1 `0004` & 5 Dk Senkronizasyon (`migrations/0004_phase7_enrichment.sql`, `src/modules/db/`, `service.ts`, `matching/engine.ts`, `api/**`):** `announcement_positions` (179 satir), `source_checkpoints`, `saved_searches`, 10-tablo KVKK silme, monotonik `enriched` koruma, devre kesicili `8.2s` Worker cron, `POST /api/cron/ingest`, `scripts/sync-remote.ts`, `.github/workflows/sync-official-sources.yml`, pozisyon bazli Matching v2.
 - **Premium UI/UX (`src/app/globals.css`, `AnnouncementFeed.tsx`, `AnnouncementDetailClient.tsx`, `/ilan/[id]`, `/ayarlar`, `/kaynak/[slug]`):** Canli guncellik bandi, kategori sekmeleri, `Mulakatsiz (KPSS)` filtresi, alt kadrolu slide-over cekmece, arama alarmi.
 
 ## Decisions & Constraints (Do Not Re-litigate)
 - **Oncelik Sirasi:** Faz 7 tamam (#1) -> Faz 9 (Orta: performans/DevOps) -> Faz 10 (Dusuk: SEO/TWA/B2B) -> **Faz 8 EN SON** (kullanici odeme/e-postayi demoda tutmak istiyor).
-- **WAF / Push-Ingest Mimarisi:** `kamuilan.sbb.gov.tr` ve `api.kariyerkapisi.gov.tr` Cloudflare Workers datacenter IP'lerini engellediginden (`403`/timeout), Worker `*/5` cron devre kesicili hizli sync yaparken `scripts/sync-remote.ts` (ve GitHub Actions sablonu `docs/examples/sync-official-sources.yml`) `POST /api/cron/ingest` ile tam zenginlestirilmis veriyi basar; monotonik D1 upsert enriched veriyi korur.
+- **WAF / Push-Ingest Mimarisi:** `kamuilan.sbb.gov.tr` ve `api.kariyerkapisi.gov.tr` Cloudflare Workers datacenter IP'lerini engellediginden (`403`/timeout), Worker `*/5` cron devre kesicili hizli sync yaparken `scripts/sync-remote.ts` (ve aktif `.github/workflows/sync-official-sources.yml`) `POST /api/cron/ingest` ile tam zenginlestirilmis veriyi basar; monotonik D1 upsert enriched veriyi korur.
 - **Marka & Hijyen:** YALNIZCA **Kamu Bildirim Sepeti**; 0 yasakli rakip adi, 0 em-dash (`\u2014`), `AGENTS.md` 1-9. satirlari koru.
 - **Gizli Anahtarlar & Dizin:** Degerleri asla yazma/loglama; gercek repo `/home/znekm/Belgeler/kpssAtama`.
 
 ## Known Risks / Open Blockers
-- Yerel GitHub OAuth uygulamasinda `workflow` scope bulunmadigindan `.github/workflows/` dogrudan pushlanamadi; hazir YAML sablonu `docs/examples/sync-official-sources.yml` icindedir (kullanici GitHub UI uzerinden `.github/workflows/` altina kopyalayip `Secrets -> CRON_SECRET` ekleyebilir).
+- None (GitHub Actions `CRON_SECRET` ve `SYNC_TARGET_URL` aktif ve Worker ile esitlendi).
 
 ## Next Atomic Steps
-1. (Opsiyonel) `docs/examples/sync-official-sources.yml` sablonunu GitHub UI'dan `.github/workflows/sync-official-sources.yml` olarak etkinlestir ve repo Secrets altina mevcut `CRON_SECRET` degerini ekle.
-2. **Faz 9 Sprint 1:** `9.703` KPSS arsiv verisini kompakt JSON/D1'e ayirarak Worker paketini (`28.8 MB`) kucult, `src/components/PublicInsightsClient.tsx` (/analiz) icine SBB kartini ekle.
+1. **Faz 9 Sprint 1:** `9.703` KPSS arsiv verisini kompakt JSON/D1'e ayirarak Worker paketini (`28.8 MB`) kucult, `src/components/PublicInsightsClient.tsx` (/analiz) icine SBB kartini ekle.
 
 ## Copy-Paste Resume Prompt
-> Read `HANDOFF.md`, `AGENTS.md`, `docs/PROGRESS.md`, `docs/ROADMAP.md`, and `.agents/skills/github-handoff/SKILL.md`. Run `git status --short && git log -n 5 --oneline` and `npm test && npm run lint` to confirm baseline, honor the Phase 9 > 10 > 8 priority order, and execute Next Atomic Step #1 or #2.
+> Read `HANDOFF.md`, `AGENTS.md`, `docs/PROGRESS.md`, `docs/ROADMAP.md`, and `.agents/skills/github-handoff/SKILL.md`. Run `git status --short && git log -n 5 --oneline` and `npm test && npm run lint` to confirm baseline, honor the Phase 9 > 10 > 8 priority order, and execute Next Atomic Step #1.
