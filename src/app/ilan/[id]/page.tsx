@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import AppShell from '@/components/AppShell';
 import AnnouncementDetailClient from '@/components/AnnouncementDetailClient';
 import { INITIAL_ANNOUNCEMENTS } from '@/modules/announcements/seed';
+import { enrichAnnouncementOnDemand } from '@/modules/announcements/service';
 import { getDb } from '@/modules/db';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,20 @@ async function resolveAnnouncement(id: string) {
   try {
     const db = await getDb();
     const fromDb = await db.getAnnouncementById(id);
-    if (fromDb) return fromDb;
+    if (fromDb) {
+      try {
+        const enriched = await enrichAnnouncementOnDemand(db, fromDb);
+        const positions =
+          enriched.positions ?? (await db.listAnnouncementPositions(enriched.id));
+        return {
+          ...enriched,
+          positions,
+          positionsCount: positions.length,
+        };
+      } catch {
+        return fromDb;
+      }
+    }
   } catch {
     // Fallback to static seed
   }

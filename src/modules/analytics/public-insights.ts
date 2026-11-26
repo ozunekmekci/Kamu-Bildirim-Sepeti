@@ -79,7 +79,11 @@ export interface CityLandingData {
   topInstitutions: InstitutionInsight[];
 }
 
-export type OfficialSourceSlug = 'kariyer-kapisi' | 'iskur' | 'resmi-gazete';
+export type OfficialSourceSlug =
+  | 'kariyer-kapisi'
+  | 'kamuilan-sbb'
+  | 'iskur'
+  | 'resmi-gazete';
 
 export interface SourceLandingData {
   slug: OfficialSourceSlug;
@@ -115,6 +119,11 @@ const SOURCE_CONFIG: Record<
     source: 'kariyer_kapisi',
     description:
       'Cumhurbaşkanlığı İnsan Kaynakları Ofisi Kariyer Kapısı üzerinde yayımlanan merkezi ve sözleşmeli kamu personel alım ilanları.',
+  },
+  'kamuilan-sbb': {
+    source: 'sbb',
+    description:
+      'T.C. Cumhurbaşkanlığı Strateji ve Bütçe Başkanlığı (SBB) Kamu İlan portalında yayımlanan merkezi kurum, akademik ve sözleşmeli alım duyuruları.',
   },
   iskur: {
     source: 'iskur',
@@ -551,7 +560,10 @@ export function getSourceLandingData(
   slug: string,
   allAnnouncements: Announcement[] = INITIAL_ANNOUNCEMENTS
 ): SourceLandingData | null {
-  const normalized = slugifyTurkishCity(slug) as OfficialSourceSlug;
+  const rawNormalized = slugifyTurkishCity(slug);
+  const normalized = (
+    rawNormalized === 'sbb' ? 'kamuilan-sbb' : rawNormalized
+  ) as OfficialSourceSlug;
   const config = SOURCE_CONFIG[normalized];
   if (!config) {
     return null;

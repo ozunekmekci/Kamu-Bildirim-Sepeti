@@ -2,13 +2,14 @@
 
 **Kamu Bildirim Sepeti**, kamu kurumları tarafından yayımlanan **atama**, **personel alımı** ve **görevlendirme** ilanlarını tek merkezden takip etmeyi, aday profiline göre uygunluk eşleştirmesi yapmayı ve son başvuru takibini kolaylaştıran bir SaaS platformudur.
 
-- **Canlı Dağıtım (Cloudflare Workers + D1):** https://kpssportal.ozunekmekci.workers.dev (`0 */6 * * *` otomatik Cron senkronizasyonu aktif)
+- **Canlı Dağıtım (Cloudflare Workers + D1):** https://kpssportal.ozunekmekci.workers.dev (`*/5 * * * *` 5 dakikalık Cron + `POST /api/cron/ingest` aktif)
 
 ## Resmî Kaynaklar ve Kapsam
 Platform aşağıdaki resmî kamu kaynaklarından derlenen ilan yapılarını ve mevcut KPSS yerleştirme arşivini bir araya getirir:
-- **Kariyer Kapısı:** https://kariyerkapisi.gov.tr
-- **Türkiye İş Kurumu (İŞKUR):** https://www.iskur.gov.tr/
-- **T.C. Resmî Gazete:** https://www.resmigazete.gov.tr/
+- **Kariyer Kapısı:** https://kariyerkapisi.gov.tr (JSON API + alt kadro/şart zenginleştirme)
+- **T.C. Cumhurbaşkanlığı Strateji ve Bütçe Başkanlığı (SBB Kamu İlan):** https://kamuilan.sbb.gov.tr/
+- **Türkiye İş Kurumu (İŞKUR Kamu Memur):** https://www.iskur.gov.tr/ilanlar/kamu-memur-alim-ilanlari/
+- **T.C. Resmî Gazete:** https://www.resmigazete.gov.tr/ (personel/atama pozitif filtresi)
 - **ÖSYM KPSS Arşivi (`/kpss-arsivi`):** Mevcut merkezi yerleştirme kadroları, taban puan analizi ve nitelik kodu arama aracı
 
 > Her ilanın güncel, eksiksiz ve bağlayıcı hâli ilgili kamu kurumunun resmî internet sitesinde yayımlanan metindir. Kamu Bildirim Sepeti üzerinde gösterilen bilgiler ile resmî kaynak arasında farklılık bulunması hâlinde resmî kaynak esas alınmalıdır.
@@ -40,6 +41,7 @@ npm run lint
 npm run build
 npm run build:worker
 npm run probe:sources
+npm run sync:remote -- --dry-run
 node scripts/browser-audit.mjs
 ```
 

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { enrichAnnouncementOnDemand } from '@/modules/announcements/service';
 import { getUserBillingState } from '@/modules/billing';
 import { getDb } from '@/modules/db';
 import {
@@ -16,20 +17,30 @@ export async function GET(
 ) {
   const { id } = await context.params;
   const db = await getDb();
-  const announcement = await db.getAnnouncementById(id);
+  const found = await db.getAnnouncementById(id);
 
-  if (!announcement) {
+  if (!found) {
     return NextResponse.json(
       { error: 'İlan bulunamadı.', code: 'NOT_FOUND' },
       { status: 404 },
     );
   }
 
+  const enriched = await enrichAnnouncementOnDemand(db, found);
+  const positions =
+    enriched.positions ?? (await db.listAnnouncementPositions(enriched.id));
+  const announcement = {
+    ...enriched,
+    positions,
+    positionsCount: positions.length,
+  };
+
   const user = await getAuthenticatedUser(db, getSessionTokenFromRequest(request));
   if (!user) {
     return NextResponse.json(
       {
         announcement,
+        positions,
         saved: false,
         match: null,
         canUseProfileMatch: false,
@@ -50,6 +61,7 @@ export async function GET(
   return NextResponse.json(
     {
       announcement,
+      positions,
       saved: savedIds.includes(announcement.id),
       match: billing.entitlements.canUseProfileMatch ? evaluation : null,
       canUseProfileMatch: billing.entitlements.canUseProfileMatch,

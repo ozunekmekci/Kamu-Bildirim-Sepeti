@@ -1,38 +1,35 @@
 # Project Handoff: Kamu Bildirim Sepeti
 
-- **Updated:** 2026-11-26 18:30 +03:00
-- **Status:** READY (Faz 1-6 tamamlandi; Cloudflare Workers + D1 + Cron canli yayinda)
-- **Live URL:** `https://kpssportal.ozunekmekci.workers.dev` (Version `c6fd9845-5e34-4987-9163-16fed3f80baf`, Cron `0 */6 * * *`)
-- **Database (D1):** `kamu_bildirim_sepeti` (`37ec183a-11be-4a6c-b0fd-caa2039677f7`, region `EEUR`, `0001..0003` applied, `77` announcements)
-- **Verified Baseline Commands (Faz 6):**
-  - `npm test` (paralel): 31/31 dosya, 347/347 test gecti (`9.09s`, `EXIT=0`)
-  - `npm run lint` & `npx tsc --noEmit`: 0 hata (`EXIT=0`)
-  - `npm run build` & `npm run deploy`: `EXIT=0` (`28451.09 KiB`, `15 ms` startup)
-  - `node scripts/browser-audit.mjs`: `[AUDIT PASSED]` (14 rota HTTP 200, 20/20 Masaustu/Mobil Acik/Koyu 0 tasma, 5/5 R-35)
-  - Canli duman testi: `/api/health`, `/api/announcements` (`77`), `/`, `/analiz`, `/kpss-arsivi`, `/sehir/{ankara,istanbul,izmir}`, `/kaynak/kariyer-kapisi`, `/ayarlar`, `/profil` hepsi HTTP 200
+- **Updated:** 2026-11-26 19:58 +03:00
+- **Status:** READY (Faz 1-7 tamamlandi ve canli Workers + D1 uzerinde dogrulandi)
+- **Live URL:** `https://kpssportal.ozunekmekci.workers.dev` (Version `eae0b0ed-4bb7-419f-a457-a506b5a65dfc`, Cron `*/5 * * * *`)
+- **Database (D1):** `kamu_bildirim_sepeti` (`37ec183a-11be-4a6c-b0fd-caa2039677f7`, `EEUR`, `0001..0004`, `151` canli ilan + `179` alt kadro, `%77.48` il dolulugu, `0` ihale/DNS gurultusu)
+- **Verified Baseline Commands (Faz 7):**
+  - `npm test`: 34/34 dosya, 373/373 test gecti (`9.28s`, `EXIT=0`)
+  - `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run deploy`: `EXIT=0`
+  - `node scripts/browser-audit.mjs`: `[AUDIT PASSED]` (14 rota HTTP 200, 20/20 matris 0 tasma, 5/5 R-35)
+  - `npx tsx scripts/sync-remote.ts --target https://kpssportal.ozunekmekci.workers.dev`: `145` tekil ilan, `179` pozisyon (`EXIT=0`) + Worker `POST /api/cron/sync`: `8.2s` HTTP 200
 
 ## Current Goal
-Canli Cloudflare Workers uzerinde calisan **Kamu Bildirim Sepeti** SaaS urununde istege bagli ucretli e-posta/odeme saglayicilarini (`Resend`/`Stripe`/`iyzico`) ve ozel alan adini bağlamak, ardindan uretim kalitesini izlemek.
+**Kamu Bildirim Sepeti** SaaS urununun yuksek veri kalitesiyle canli takibini surdurmek ve siradaki orta oncelikli **Faz 9** (Worker paket kucultme, R2 cache, `/analiz` SBB karti + kaynak saglik alarmi) adimina hazirlanmak (**Faz 8** gelir/odeme katmani kullanici karariyla en son / demoda tutulur).
 
-## Completed Since Last Handoff (Faz 6)
-- **Kariyer Kapisi Canli RSS (`src/modules/announcements/parsers.ts`, `scripts/probe-sources.ts`, `tests/phase6-kariyer-rss.test.ts`):** `https://kariyerkapisi.gov.tr/RSS` (`feedUrl`) ve Turkce buyuk harf uyumlu `splitInstitutionAndTitle` + `?i=<uuid>` kalici ID eklendi (`npm run probe:sources`: toplam `53` canli ilan = Kariyer Kapisi `25` + ISKUR `12` + Resmi Gazete `16`).
-- **Cloudflare D1 & Workers Canli Yayin (`wrangler.jsonc`):** `kamu_bildirim_sepeti` D1 veritabani olusturuldu, `0001..0003` uzak migrasyonlar uygulandi, 8 gizli anahtar (`wrangler secret bulk`) yuklendi ve ilk canli `POST /api/cron/sync` `53` ilani D1'e yazdi (`errors: []`).
-- **Worker 10ms CPU (Error 1102) Cozumu (`src/modules/analytics/public-insights.ts`, `src/components/KpssArchiveLoader.tsx`, `src/app/kpss-arsivi/page.tsx`):** Sehir normalizasyonu/slug memoize edildi + `WeakMap` indeksi eklendi; `/kpss-arsivi` 9.703 kayitlik arama motoru istemci dinamik yukleyicisine alindi (`HTTP 503/1102` -> `HTTP 200`).
+## Completed Since Last Handoff (Faz 7)
+- **Kaynaklar & Taksonomi (`src/modules/announcements/{types,taxonomy,connectors,parsers}.ts`):** Kariyer Kapisi JSON API (`GetIseAlimPage`, `GetIlanPreviewPublic`, `GetAltIlanInfoByIlanIdPublic`), SBB (`kamuilan.sbb.gov.tr`), ISKUR Kamu Memur (`iskur.gov.tr/ilanlar/kamu-memur-alim-ilanlari/`), RG pozitif filtresi, 81 il/ilce/universite il cikarimi, ic taksonomi ve capraz tekillestirme.
+- **D1 `0004` & 5 Dk Senkronizasyon (`migrations/0004_phase7_enrichment.sql`, `src/modules/db/`, `service.ts`, `matching/engine.ts`, `api/**`):** `announcement_positions` (179 satir), `source_checkpoints`, `saved_searches`, 10-tablo KVKK silme, monotonik `enriched` koruma, devre kesicili `8.2s` Worker cron, `POST /api/cron/ingest`, `scripts/sync-remote.ts`, `docs/examples/sync-official-sources.yml`, pozisyon bazli Matching v2.
+- **Premium UI/UX (`src/app/globals.css`, `AnnouncementFeed.tsx`, `AnnouncementDetailClient.tsx`, `/ilan/[id]`, `/ayarlar`, `/kaynak/[slug]`):** Canli guncellik bandi, kategori sekmeleri, `Mulakatsiz (KPSS)` filtresi, alt kadrolu slide-over cekmece, arama alarmi.
 
 ## Decisions & Constraints (Do Not Re-litigate)
-- **Marka Adi:** YALNIZCA **Kamu Bildirim Sepeti**. Ucuncu taraf rakip uygulama adini asla kullanma.
-- **Metin Hijyeni:** Kod, UI, hata mesajlari ve dokumanlarda em-dash (`\u2014`) kullanma (0 eslesme).
-- **Resmi Kaynak & Hukuk:** Kariyer Kapisi, ISKUR, Resmi Gazete + `/kpss-arsivi`; resmi kurum metni baglayicidir; KVKK 5 kategori ve `'SIL'` ile hesap silme korunur.
-- **Gizli Anahtarlar:** Hicbir gizli anahtar degerini (`SESSION_SECRET`, `CRON_SECRET`, `VAPID_PRIVATE_KEY`) dosyalara/loglara yazma; Cloudflare Secrets Store uzerinde yonet.
-- **Yerel Dizin Notu:** Diskteki gercek repo `/home/znekm/Belgeler/kpssAtama`; `AGENTS.md` 1-9. satirlari koru.
+- **Oncelik Sirasi:** Faz 7 tamam (#1) -> Faz 9 (Orta: performans/DevOps) -> Faz 10 (Dusuk: SEO/TWA/B2B) -> **Faz 8 EN SON** (kullanici odeme/e-postayi demoda tutmak istiyor).
+- **WAF / Push-Ingest Mimarisi:** `kamuilan.sbb.gov.tr` ve `api.kariyerkapisi.gov.tr` Cloudflare Workers datacenter IP'lerini engellediginden (`403`/timeout), Worker `*/5` cron devre kesicili hizli sync yaparken `scripts/sync-remote.ts` (ve GitHub Actions sablonu `docs/examples/sync-official-sources.yml`) `POST /api/cron/ingest` ile tam zenginlestirilmis veriyi basar; monotonik D1 upsert enriched veriyi korur.
+- **Marka & Hijyen:** YALNIZCA **Kamu Bildirim Sepeti**; 0 yasakli rakip adi, 0 em-dash (`\u2014`), `AGENTS.md` 1-9. satirlari koru.
+- **Gizli Anahtarlar & Dizin:** Degerleri asla yazma/loglama; gercek repo `/home/znekm/Belgeler/kpssAtama`.
 
 ## Known Risks / Open Blockers
-- E-posta (`RESEND_API_KEY`/`MAILCHANNELS_API_KEY`) ve gercek odeme (`STRIPE_*`/`IYZICO_*`) saglayicilari henuz opsiyonel modda (`email: noop`, `payment: demo`).
-- Canli D1 icindeki 24 tohum + 53 canli ilan arasinda tarih formatindan dolayi bazi Kariyer Kapisi RSS kayitlari (son tarih metni yoksa `pubDate` esasli) `kapali` sekmesinde gorunur.
+- Yerel GitHub OAuth uygulamasinda `workflow` scope bulunmadigindan `.github/workflows/` dogrudan pushlanamadi; hazir YAML sablonu `docs/examples/sync-official-sources.yml` icindedir (kullanici GitHub UI uzerinden `.github/workflows/` altina kopyalayip `Secrets -> CRON_SECRET` ekleyebilir).
 
 ## Next Atomic Steps
-1. Opsiyonel canli entegrasyon anahtarlarini ekle (`RESEND_API_KEY` + `EMAIL_FROM`, ve/veya `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` ya da `IYZICO_*`) ve ozel alan adi (`NEXT_PUBLIC_SITE_URL`) tanimla.
-2. Kariyer Kapisi RSS ilanlarinda acik/kapali tarih ayrımını detay sayfasi veya aktif RSS kurallarina gore zenginlestirme ihtiyacini degerlendir.
+1. (Opsiyonel) `docs/examples/sync-official-sources.yml` sablonunu GitHub UI'dan `.github/workflows/sync-official-sources.yml` olarak etkinlestir ve repo Secrets altina mevcut `CRON_SECRET` degerini ekle.
+2. **Faz 9 Sprint 1:** `9.703` KPSS arsiv verisini kompakt JSON/D1'e ayirarak Worker paketini (`28.8 MB`) kucult, `src/components/PublicInsightsClient.tsx` (/analiz) icine SBB kartini ekle.
 
 ## Copy-Paste Resume Prompt
-> Read `HANDOFF.md`, `AGENTS.md`, `docs/PROGRESS.md`, and `.agents/skills/github-handoff/SKILL.md`. Run `git status --short && git log -n 5 --oneline` and `npm test && npm run lint` to confirm baseline, adopt all Decisions & Constraints without re-litigating, and continue immediately from Next Atomic Step #1.
+> Read `HANDOFF.md`, `AGENTS.md`, `docs/PROGRESS.md`, `docs/ROADMAP.md`, and `.agents/skills/github-handoff/SKILL.md`. Run `git status --short && git log -n 5 --oneline` and `npm test && npm run lint` to confirm baseline, honor the Phase 9 > 10 > 8 priority order, and execute Next Atomic Step #1 or #2.

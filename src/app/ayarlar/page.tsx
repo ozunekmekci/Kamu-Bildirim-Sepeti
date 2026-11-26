@@ -16,9 +16,12 @@ import {
   MailCheck,
   RefreshCw,
   Smartphone,
+  Bookmark,
 } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import { useTheme } from '@/components/ThemeProvider';
+import type { SourceCheckpoint } from '@/modules/announcements/types';
+import type { SavedSearchRecord } from '@/modules/db/types';
 
 interface PushSubscriptionItem {
   id: string;
@@ -26,6 +29,14 @@ interface PushSubscriptionItem {
   userAgent?: string | null;
   createdAt: string;
 }
+
+const SOURCE_LABELS: Record<string, string> = {
+  kariyer_kapisi: 'Kariyer Kapısı',
+  sbb: 'SBB Kamu İlan',
+  iskur: 'İŞKUR',
+  resmi_gazete: 'Resmî Gazete',
+  osym_kpss: 'ÖSYM KPSS',
+};
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -156,6 +167,18 @@ function formatSyncStatusLabel(status: string): string {
   return status;
 }
 
+function formatSavedSearchFilters(search: SavedSearchRecord): string[] {
+  const tags: string[] = [];
+  const f = search.filters;
+  if (f.q) tags.push(`Arama: ${f.q}`);
+  if (f.city) tags.push(`Şehir: ${f.city}`);
+  if (f.source) tags.push(`Kaynak: ${SOURCE_LABELS[f.source] ?? f.source}`);
+  if (f.category) tags.push(`Kategori: ${f.category}`);
+  if (f.employmentType) tags.push(`Kadro: ${f.employmentType}`);
+  if (f.examType === 'kpss_only') tags.push('Mülakatsız (KPSS)');
+  return tags;
+}
+
 export default function AyarlarPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -175,7 +198,13 @@ export default function AyarlarPage() {
   const [verificationPreviewToken, setVerificationPreviewToken] = useState<string | null>(null);
 
   const [lastSyncRun, setLastSyncRun] = useState<SyncRunSummary | null>(null);
+  const [checkpoints, setCheckpoints] = useState<SourceCheckpoint[]>([]);
   const [healthStatus, setHealthStatus] = useState<HealthReadinessResponse | null>(null);
+
+  const [savedSearches, setSavedSearches] = useState<SavedSearchRecord[]>([]);
+  const [savedSearchBusyId, setSavedSearchBusyId] = useState<string | null>(null);
+  const [savedSearchMsg, setSavedSearchMsg] = useState<string | null>(null);
+  const [savedSearchError, setSavedSearchError] = useState<string | null>(null);
 
   const [pushSupported, setPushSupported] = useState(false);
   const [vapidConfigured, setVapidConfigured] = useState(false);
@@ -229,8 +258,12 @@ export default function AyarlarPage() {
         if (syncRes.ok) {
           const syncData = (await syncRes.json()) as {
             lastRun?: SyncRunSummary | null;
+            checkpoints?: SourceCheckpoint[];
           };
           setLastSyncRun(syncData.lastRun ?? null);
+          setCheckpoints(
+            Array.isArray(syncData.checkpoints) ? syncData.checkpoints : []
+          );
         }
         if (vapidRes && vapidRes.ok) {
           const vapidData = (await vapidRes.json()) as {
@@ -256,10 +289,11 @@ export default function AyarlarPage() {
           return;
         }
 
-        const [prefsRes, billingRes, pushSubRes] = await Promise.all([
+        const [prefsRes, billingRes, pushSubRes, savedSearchRes] = await Promise.all([
           fetch('/api/notifications/preferences', { cache: 'no-store' }),
           fetch('/api/billing', { cache: 'no-store' }),
           fetch('/api/push/subscriptions', { cache: 'no-store' }).catch(() => null),
+          fetch('/api/saved-searches', { cache: 'no-store' }).catch(() => null),
         ]);
         if (!active) return;
 
@@ -300,6 +334,14 @@ export default function AyarlarPage() {
             subscriptions?: PushSubscriptionItem[];
           };
           setPushSubscriptions(Array.isArray(subData.subscriptions) ? subData.subscriptions : []);
+        }
+        if (savedSearchRes && savedSearchRes.ok) {
+          const ssData = (await savedSearchRes.json()) as {
+            searches?: SavedSearchRecord[];
+            items?: SavedSearchRecord[];
+          };
+          const list = ssData.searches ?? ssData.items;
+          setSavedSearches(Array.isArray(list) ? list : []);
         }
       })
       .catch(() => {
@@ -380,6 +422,28 @@ export default function AyarlarPage() {
       setError('Sunucuya bağlanılamadı.');
     } finally {
       setSavingPrefs(false);
+    }
+  };
+
+  const handleDeleteSavedSearch = async (searchId: string) => {
+    setSavedSearchError(null);
+    setSavedSearchMsg(null);
+    setSavedSearchBusyId(searchId);
+    try {
+      const res = await fetch(`/api/saved-searches?id=${encodeURIComponent(searchId)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setSavedSearchError(data.error || 'Kayıtlı arama silinemedi.');
+        return;
+      }
+      setSavedSearches((prev) => prev.filter((item) => item.id !== searchId));
+      setSavedSearchMsg('Kayıtlı arama alarmı silindi.');
+    } catch {
+      setSavedSearchError('Sunucuya bağlanılamadı.');
+    } finally {
+      setSavedSearchBusyId(null);
     }
   };
 
@@ -543,7 +607,7 @@ export default function AyarlarPage() {
         <div className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5">
           <div className="flex items-center gap-2 text-[#b91c1c] dark:text-[#ef4444] mb-1">
             <Settings className="w-4 h-4" aria-hidden="true" />
-            <span className="text-xs font-bold uppercase tracking-wider">Hesap ve Sistem Ayarları</span>
+            <span className="text-xs font-semibold">Hesap ve Sistem Ayarları</span>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
             Bildirim Tercihleri, Görünüm ve Veri Yönetimi
@@ -604,7 +668,7 @@ export default function AyarlarPage() {
               Bildirim ve Hesap Ayarları İçin Giriş Yapın
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 max-w-md mx-auto">
-              Son başvuru hatırlatıcılarını yönetmek ve hesap verilerinizi düzenlemek için oturum açmanız gerekir.
+              Son başvuru hatırlatıcılarını, kayıtlı arama alarmlarınızı yönetmek ve hesap verilerinizi düzenlemek için oturum açmanız gerekir.
             </p>
             <div className="flex flex-wrap justify-center gap-2.5 pt-2">
               <Link
@@ -703,6 +767,100 @@ export default function AyarlarPage() {
                     </div>
                   )}
                 </div>
+              )}
+            </section>
+
+            {/* Saved Search Alarms */}
+            <section className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Bookmark className="w-4 h-4 text-[#b91c1c] dark:text-[#ef4444]" aria-hidden="true" />
+                  <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                    Kayıtlı Arama Alarmlarım
+                  </h2>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-0.5 border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 tabular-nums">
+                  {savedSearches.length} Alarm
+                </span>
+              </div>
+
+              {savedSearchError && (
+                <div
+                  role="alert"
+                  className="p-3 border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-xs text-red-900 dark:text-red-200 flex items-center gap-2"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>{savedSearchError}</span>
+                </div>
+              )}
+
+              {savedSearchMsg && (
+                <div
+                  role="status"
+                  className="p-3 border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>{savedSearchMsg}</span>
+                </div>
+              )}
+
+              {savedSearches.length === 0 ? (
+                <div className="p-4 border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-700 dark:text-slate-300 flex flex-wrap items-center justify-between gap-3">
+                  <span>
+                    Henüz kayıtlı arama alarmınız bulunmuyor. İlan Akışı sayfasındaki &quot;Bu Aramayı Alarm Yap&quot; butonu ile oluşturabilirsiniz.
+                  </span>
+                  <Link href="/" className="font-bold text-[#b91c1c] dark:text-[#ef4444] underline">
+                    İlan Akışına Git
+                  </Link>
+                </div>
+              ) : (
+                <ul className="space-y-2.5">
+                  {savedSearches.map((search) => {
+                    const tags = formatSavedSearchFilters(search);
+                    return (
+                      <li
+                        key={search.id}
+                        className="border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3 flex flex-wrap items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="space-y-1.5 min-w-0 flex-1">
+                          <div className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                            {search.name}
+                          </div>
+                          {tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="px-2 py-0.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#111827] text-slate-700 dark:text-slate-300"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600 dark:text-slate-400 tabular-nums">
+                            {search.notifyEmail && <span>E-posta Açık</span>}
+                            {search.notifyPush && <span>Web Push Açık</span>}
+                            <span>
+                              Kayıt: {new Date(search.createdAt).toLocaleDateString('tr-TR')}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={savedSearchBusyId === search.id}
+                          onClick={() => handleDeleteSavedSearch(search.id)}
+                          aria-label={`${search.name} alarmını sil`}
+                          className="min-h-[44px] px-3 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          <span>Sil</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </section>
 
@@ -928,7 +1086,7 @@ export default function AyarlarPage() {
             </section>
 
             {/* Official Source Sync Status */}
-            <section className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-6 space-y-3">
+            <section className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-5 sm:p-6 space-y-4">
               <div className="flex items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
                 <div className="flex items-center gap-2">
                   <RefreshCw className="w-4 h-4 text-[#b91c1c] dark:text-[#ef4444]" aria-hidden="true" />
@@ -966,6 +1124,45 @@ export default function AyarlarPage() {
                     <div className="font-bold text-slate-900 dark:text-slate-100 mt-0.5">
                       {formatSyncStatusLabel(lastSyncRun.status)} ({lastSyncRun.remindersSent + lastSyncRun.newAlertsSent} bildirim)
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {checkpoints.length > 0 && (
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                  <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Kaynak Bazlı Tazelik Kontrolleri
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs tabular-nums">
+                    {checkpoints.map((cp) => (
+                      <div
+                        key={cp.source}
+                        className="border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3 flex items-center justify-between gap-3"
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="font-bold text-slate-900 dark:text-slate-100">
+                            {SOURCE_LABELS[cp.source] ?? cp.source}
+                          </div>
+                          <div className="text-slate-600 dark:text-slate-400">
+                            Son kontrol: {new Date(cp.lastCheckedAt).toLocaleString('tr-TR')}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0 space-y-1">
+                          <div className="font-bold text-slate-900 dark:text-slate-100">
+                            {cp.activeCount} aktif ilan
+                          </div>
+                          <span
+                            className={`inline-block px-2 py-0.5 border font-semibold ${
+                              cp.lastError
+                                ? 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
+                                : 'border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200'
+                            }`}
+                          >
+                            {cp.lastError ? 'Uyarı' : 'Güncel'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

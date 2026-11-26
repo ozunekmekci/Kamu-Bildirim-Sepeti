@@ -1,15 +1,32 @@
-import { INITIAL_ANNOUNCEMENTS, filterAnnouncements } from '@/modules/announcements';
-import type { Announcement, AnnouncementFilter } from '@/modules/announcements/types';
+import {
+  INITIAL_ANNOUNCEMENTS,
+  classifyAnnouncement,
+  filterAnnouncements,
+} from '@/modules/announcements';
+import type {
+  Announcement,
+  AnnouncementPosition,
+  SourceCheckpoint,
+} from '@/modules/announcements/types';
+import {
+  isDemoAnnouncement,
+  isLegacySeedId,
+  isNoisyNonRecruitmentRow,
+  mergeVerifiedSources,
+} from './d1-adapter';
 import type {
   AuthToken,
   AuthTokenPurpose,
   CreateUserInput,
   DatabaseAdapter,
+  ListAnnouncementsFilter,
   NotificationPreferences,
+  PruneRowsResult,
   PushSubscriptionRecord,
   ReminderLog,
   SavedAnnouncementRecord,
   SavedAnnouncementWithItem,
+  SavedSearchRecord,
   Session,
   StoredUser,
   Subscription,
@@ -18,9 +35,33 @@ import type {
   UserProfile,
 } from './types';
 
+function clonePosition(pos: AnnouncementPosition): AnnouncementPosition {
+  return {
+    ...pos,
+    qualificationCodes: [...(pos.qualificationCodes ?? [])],
+  };
+}
+
 function cloneAnnouncement(item: Announcement): Announcement {
+  const cls =
+    item.employmentType && item.noticeType && item.examType
+      ? null
+      : classifyAnnouncement({
+          source: item.source,
+          institution: item.institution,
+          title: item.title,
+          description: item.summary,
+        });
+
   return {
     ...item,
+    employmentType: item.employmentType ?? cls?.employmentType ?? 'diger',
+    noticeType: item.noticeType ?? cls?.noticeType ?? 'ilan',
+    examType: item.examType ?? cls?.examType ?? 'unspecified',
+    enrichmentStatus: item.enrichmentStatus ?? 'pending',
+    isDemo: item.isDemo ?? isLegacySeedId(item.id),
+    verifiedSources: item.verifiedSources ? item.verifiedSources.map((s) => ({ ...s })) : [],
+    positions: item.positions ? item.positions.map(clonePosition) : undefined,
     criteria: {
       ...item.criteria,
       educationLevels: [...item.criteria.educationLevels],
@@ -41,7 +82,10 @@ export class MemoryDbAdapter implements DatabaseAdapter {
   private authTokens = new Map<string, AuthToken>();
   private profiles = new Map<string, UserProfile>();
   private announcements = new Map<string, Announcement>();
+  private positionsByAnnouncement = new Map<string, AnnouncementPosition[]>();
+  private sourceCheckpoints = new Map<string, SourceCheckpoint>();
   private saved = new Map<string, SavedAnnouncementRecord>();
+  private savedSearches = new Map<string, SavedSearchRecord>();
   private notificationPrefs = new Map<string, NotificationPreferences>();
   private reminderLogs = new Map<string, ReminderLog>();
   private subscriptions = new Map<string, Subscription>();
@@ -49,8 +93,17 @@ export class MemoryDbAdapter implements DatabaseAdapter {
   private pushSubscriptions = new Map<string, PushSubscriptionRecord>();
 
   constructor(seedAnnouncements: Announcement[] = INITIAL_ANNOUNCEMENTS) {
+    this.seedInitial(seedAnnouncements);
+  }
+
+  private seedInitial(seedAnnouncements: Announcement[]): void {
     for (const item of seedAnnouncements) {
-      this.announcements.set(item.id, cloneAnnouncement(item));
+      const cloned = cloneAnnouncement({
+        ...item,
+        isDemo: item.isDemo ?? isLegacySeedId(item.id),
+        enrichmentStatus: item.enrichmentStatus ?? 'enriched',
+      });
+      this.announcements.set(item.id, cloned);
     }
   }
 
@@ -61,15 +114,16 @@ export class MemoryDbAdapter implements DatabaseAdapter {
     this.authTokens.clear();
     this.profiles.clear();
     this.announcements.clear();
+    this.positionsByAnnouncement.clear();
+    this.sourceCheckpoints.clear();
     this.saved.clear();
+    this.savedSearches.clear();
     this.notificationPrefs.clear();
     this.reminderLogs.clear();
     this.subscriptions.clear();
     this.syncRuns.clear();
     this.pushSubscriptions.clear();
-    for (const item of seedAnnouncements) {
-      this.announcements.set(item.id, cloneAnnouncement(item));
-    }
+    this.seedInitial(seedAnnouncements);
   }
 
   async createUser(input: CreateUserInput): Promise<StoredUser> {
@@ -177,6 +231,12 @@ export class MemoryDbAdapter implements DatabaseAdapter {
       }
     }
 
+    for (const [searchId, search] of this.savedSearches.entries()) {
+      if (search.userId === userId) {
+        this.savedSearches.delete(searchId);
+      }
+    }
+
     this.notificationPrefs.delete(userId);
 
     for (const [key, log] of this.reminderLogs.entries()) {
@@ -270,14 +330,40 @@ export class MemoryDbAdapter implements DatabaseAdapter {
     };
   }
 
-  async listAnnouncements(filter?: AnnouncementFilter): Promise<Announcement[]> {
-    const all = Array.from(this.announcements.values()).map(cloneAnnouncement);
-    return filterAnnouncements(all, filter);
+  async listAnnouncements(filter?: ListAnnouncementsFilter): Promise<Announcement[]> {
+    const all = Array.from(this.announcements.values()).map((item) => {
+      const cloned = cloneAnnouncement(item);
+      const positions = (this.positionsByAnnouncement.get(item.id) ?? []).map(clonePosition);
+      return {
+        ...cloned,
+        positions,
+        positionsCount: positions.length,
+      };
+    });
+
+    const hasLive = all.some((item) => !isDemoAnnouncement(item));
+    const shouldExcludeDemo =
+      filter?.excludeDemo === true || (filter?.excludeDemo !== false && hasLive);
+
+    const candidates = shouldExcludeDemo
+      ? all.filter((item) => !isDemoAnnouncement(item))
+      : all;
+
+    return filterAnnouncements(candidates, filter).sort((a, b) =>
+      b.publishedAt.localeCompare(a.publishedAt),
+    );
   }
 
   async getAnnouncementById(id: string): Promise<Announcement | null> {
     const found = this.announcements.get(id);
-    return found ? cloneAnnouncement(found) : null;
+    if (!found) return null;
+    const cloned = cloneAnnouncement(found);
+    const positions = (this.positionsByAnnouncement.get(id) ?? []).map(clonePosition);
+    return {
+      ...cloned,
+      positions,
+      positionsCount: positions.length,
+    };
   }
 
   async upsertAnnouncements(items: Announcement[]): Promise<UpsertAnnouncementsResult> {
@@ -291,8 +377,40 @@ export class MemoryDbAdapter implements DatabaseAdapter {
             (a) => a.externalId === item.externalId,
           );
       if (existingByExt) {
+        const preserveEnriched =
+          existingByExt.enrichmentStatus === 'enriched' &&
+          (item.enrichmentStatus ?? 'pending') !== 'enriched';
+        const cloned = cloneAnnouncement(item);
+        cloned.verifiedSources = mergeVerifiedSources(
+          existingByExt.verifiedSources,
+          cloned.verifiedSources,
+        );
+        if (existingByExt.city !== 'TÜRKİYE GENELİ' && cloned.city === 'TÜRKİYE GENELİ') {
+          cloned.city = existingByExt.city;
+        }
+        if (preserveEnriched) {
+          cloned.enrichmentStatus = 'enriched';
+          if (
+            existingByExt.deadlineAt > cloned.deadlineAt ||
+            cloned.deadlineAt === cloned.publishedAt
+          ) {
+            cloned.deadlineAt = existingByExt.deadlineAt;
+          }
+          cloned.quota = existingByExt.quota ?? cloned.quota;
+          cloned.summary = existingByExt.summary;
+          cloned.applyUrl = existingByExt.applyUrl ?? cloned.applyUrl;
+          cloned.organizationUnit = existingByExt.organizationUnit ?? cloned.organizationUnit;
+          cloned.criteria = existingByExt.criteria;
+          if (existingByExt.examType && existingByExt.examType !== 'unspecified') {
+            cloned.examType = existingByExt.examType;
+          }
+        } else {
+          cloned.quota = cloned.quota ?? existingByExt.quota;
+          cloned.applyUrl = cloned.applyUrl ?? existingByExt.applyUrl;
+          cloned.organizationUnit = cloned.organizationUnit ?? existingByExt.organizationUnit;
+        }
         this.announcements.set(existingByExt.id, {
-          ...cloneAnnouncement(item),
+          ...cloned,
           id: existingByExt.id,
         });
         updated += 1;
@@ -302,6 +420,104 @@ export class MemoryDbAdapter implements DatabaseAdapter {
       }
     }
     return { inserted, updated, total: this.announcements.size };
+  }
+
+  async replaceAnnouncementPositions(
+    announcementId: string,
+    positions: AnnouncementPosition[],
+  ): Promise<void> {
+    this.positionsByAnnouncement.set(
+      announcementId,
+      positions.map((pos) => clonePosition({ ...pos, announcementId })),
+    );
+  }
+
+  async listAnnouncementPositions(announcementId: string): Promise<AnnouncementPosition[]> {
+    return (this.positionsByAnnouncement.get(announcementId) ?? []).map(clonePosition);
+  }
+
+  async listPositionsForAnnouncements(
+    announcementIds: string[],
+  ): Promise<Record<string, AnnouncementPosition[]>> {
+    const result: Record<string, AnnouncementPosition[]> = {};
+    for (const id of announcementIds) {
+      const list = this.positionsByAnnouncement.get(id);
+      if (list && list.length > 0) {
+        result[id] = list.map(clonePosition);
+      }
+    }
+    return result;
+  }
+
+  async getSourceCheckpoint(source: string): Promise<SourceCheckpoint | null> {
+    const cp = this.sourceCheckpoints.get(source);
+    return cp ? { ...cp } : null;
+  }
+
+  async upsertSourceCheckpoint(cp: SourceCheckpoint): Promise<SourceCheckpoint> {
+    const copy = { ...cp };
+    this.sourceCheckpoints.set(copy.source, copy);
+    return { ...copy };
+  }
+
+  async listSourceCheckpoints(): Promise<SourceCheckpoint[]> {
+    return Array.from(this.sourceCheckpoints.values())
+      .sort((a, b) => a.source.localeCompare(b.source))
+      .map((cp) => ({ ...cp }));
+  }
+
+  async markExpiredAnnouncements(
+    referenceDate = new Date().toISOString().slice(0, 10),
+  ): Promise<number> {
+    let changed = 0;
+    for (const [id, item] of this.announcements.entries()) {
+      if (item.status === 'acik' && item.deadlineAt < referenceDate) {
+        this.announcements.set(id, { ...item, status: 'kapali' });
+        changed += 1;
+      }
+    }
+    return changed;
+  }
+
+  async pruneNoisyAndDemoProductionRows(): Promise<PruneRowsResult> {
+    const items = Array.from(this.announcements.values());
+    let hasLive = false;
+    const legacyIds: string[] = [];
+    const noisyIds: string[] = [];
+
+    for (const item of items) {
+      const demo = isDemoAnnouncement(item);
+      if (isLegacySeedId(item.id) && item.isDemo !== true) {
+        legacyIds.push(item.id);
+      }
+      if (!isLegacySeedId(item.id) && !demo) {
+        if (isNoisyNonRecruitmentRow(item)) {
+          noisyIds.push(item.id);
+        } else {
+          hasLive = true;
+        }
+      }
+    }
+
+    if (!hasLive) {
+      return { markedDemo: 0, prunedNoisy: 0 };
+    }
+
+    for (const id of legacyIds) {
+      const existing = this.announcements.get(id);
+      if (existing) {
+        this.announcements.set(id, { ...existing, isDemo: true });
+      }
+    }
+    for (const id of noisyIds) {
+      this.announcements.delete(id);
+      this.positionsByAnnouncement.delete(id);
+    }
+
+    return {
+      markedDemo: legacyIds.length,
+      prunedNoisy: noisyIds.length,
+    };
   }
 
   async listSavedAnnouncementIds(userId: string): Promise<string[]> {
@@ -360,6 +576,33 @@ export class MemoryDbAdapter implements DatabaseAdapter {
       if (record.userId === userId) count += 1;
     }
     return count;
+  }
+
+  async createSavedSearch(record: SavedSearchRecord): Promise<SavedSearchRecord> {
+    const copy: SavedSearchRecord = {
+      ...record,
+      filters: { ...record.filters },
+    };
+    this.savedSearches.set(copy.id, copy);
+    return {
+      ...copy,
+      filters: { ...copy.filters },
+    };
+  }
+
+  async listSavedSearches(userId: string): Promise<SavedSearchRecord[]> {
+    return Array.from(this.savedSearches.values())
+      .filter((s) => s.userId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((s) => ({ ...s, filters: { ...s.filters } }));
+  }
+
+  async deleteSavedSearch(userId: string, id: string): Promise<boolean> {
+    const existing = this.savedSearches.get(id);
+    if (!existing || existing.userId !== userId) {
+      return false;
+    }
+    return this.savedSearches.delete(id);
   }
 
   async getNotificationPrefs(userId: string): Promise<NotificationPreferences | null> {

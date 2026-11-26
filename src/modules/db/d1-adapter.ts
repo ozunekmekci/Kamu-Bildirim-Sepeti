@@ -1,9 +1,21 @@
-import { INITIAL_ANNOUNCEMENTS, filterAnnouncements } from '@/modules/announcements';
+import { normalizeTrSearch } from '@/lib/turkish';
+import {
+  INITIAL_ANNOUNCEMENTS,
+  classifyAnnouncement,
+  filterAnnouncements,
+  isPublicRecruitmentResmiGazeteItem,
+} from '@/modules/announcements';
 import type {
   Announcement,
   AnnouncementCriteria,
-  AnnouncementFilter,
+  AnnouncementPosition,
+  EmploymentType,
+  EnrichmentStatus,
+  ExamType,
   MilitaryStatus,
+  NoticeType,
+  SourceCheckpoint,
+  VerifiedSourceRef,
 } from '@/modules/announcements/types';
 import type {
   AuthToken,
@@ -12,12 +24,16 @@ import type {
   DatabaseAdapter,
   EducationLevel,
   KpssScoreType,
+  ListAnnouncementsFilter,
   NotificationPreferences,
   PlanTier,
+  PruneRowsResult,
   PushSubscriptionRecord,
   ReminderLog,
   SavedAnnouncementRecord,
   SavedAnnouncementWithItem,
+  SavedSearchFilters,
+  SavedSearchRecord,
   Session,
   StoredUser,
   Subscription,
@@ -39,6 +55,86 @@ export interface D1DatabaseLike {
   batch(statements: D1PreparedStatementLike[]): Promise<unknown[]>;
 }
 
+const LEGACY_SEED_ID_PATTERN = /^(kk|isk|rg)-2026-\d+$/i;
+const D1_BATCH_CHUNK_SIZE = 30;
+
+export function isLegacySeedId(id: string): boolean {
+  return LEGACY_SEED_ID_PATTERN.test(id);
+}
+
+export function isDemoAnnouncement(item: Pick<Announcement, 'id' | 'isDemo'>): boolean {
+  return item.isDemo === true || isLegacySeedId(item.id);
+}
+
+export function mergeVerifiedSources(
+  existing: VerifiedSourceRef[] | undefined,
+  incoming: VerifiedSourceRef[] | undefined,
+): VerifiedSourceRef[] {
+  const seen = new Set<string>();
+  const merged: VerifiedSourceRef[] = [];
+  for (const ref of [...(existing ?? []), ...(incoming ?? [])]) {
+    if (!ref || !ref.source || !ref.url) continue;
+    const key = `${ref.source}:${ref.url}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({ ...ref });
+  }
+  return merged;
+}
+
+export function isNoisyNonRecruitmentRow(
+  item: Pick<Announcement, 'id' | 'source' | 'title' | 'summary' | 'isDemo'> & {
+    sourceUrl?: string;
+  },
+): boolean {
+  if (isDemoAnnouncement(item)) return false;
+  if (item.source === 'resmi_gazete') {
+    return !isPublicRecruitmentResmiGazeteItem(item.title, item.summary);
+  }
+  if (item.source === 'iskur') {
+    const norm = normalizeTrSearch(`${item.title} ${item.summary}`);
+    const hasStrongHiring =
+      norm.includes('memur') ||
+      norm.includes('personel alim') ||
+      norm.includes('personel istihdam') ||
+      norm.includes('sozlesmeli') ||
+      norm.includes('isci alim') ||
+      norm.includes('kadro') ||
+      norm.includes('uzman yardimci') ||
+      norm.includes('mufettis yardimci') ||
+      norm.includes('kpss') ||
+      norm.includes('zabita') ||
+      norm.includes('itfaiye');
+
+    if (item.sourceUrl && item.sourceUrl.includes('/duyurular/') && !hasStrongHiring) {
+      return true;
+    }
+
+    const hasExplicitJunk =
+      norm.includes('ihale') ||
+      norm.includes('mal alimi') ||
+      norm.includes('hizmet alimi') ||
+      norm.includes('yapim isi') ||
+      norm.includes('kiralama isi') ||
+      norm.includes('satinalma') ||
+      /\bdns\b/.test(norm) ||
+      /\bsiem\b/.test(norm) ||
+      norm.includes('televizyon') ||
+      norm.includes('stratejik plan') ||
+      norm.includes('tadilat') ||
+      norm.includes('onarim') ||
+      norm.includes('ekipman') ||
+      norm.includes('zeyilname') ||
+      norm.includes('proje basvur') ||
+      (/\blisans\b/.test(norm) && !norm.includes('mezun') && !norm.includes('onlisans'));
+
+    if (hasExplicitJunk && !hasStrongHiring) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function safeParseArray(raw: unknown): string[] {
   if (typeof raw !== 'string' || !raw) return [];
   try {
@@ -46,6 +142,51 @@ function safeParseArray(raw: unknown): string[] {
     return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
   } catch {
     return [];
+  }
+}
+
+function safeParseVerifiedSources(raw: unknown): VerifiedSourceRef[] {
+  if (typeof raw !== 'string' || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is VerifiedSourceRef =>
+        Boolean(item) &&
+        typeof item === 'object' &&
+        typeof (item as VerifiedSourceRef).source === 'string' &&
+        typeof (item as VerifiedSourceRef).sourceName === 'string' &&
+        typeof (item as VerifiedSourceRef).url === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+function safeParseSavedSearchFilters(raw: unknown): SavedSearchFilters {
+  if (typeof raw !== 'string' || !raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const record = parsed as Record<string, unknown>;
+    const filters: SavedSearchFilters = {};
+    for (const key of [
+      'q',
+      'city',
+      'category',
+      'source',
+      'status',
+      'employmentType',
+      'examType',
+      'noticeType',
+    ] as const) {
+      if (typeof record[key] === 'string' && record[key]) {
+        filters[key] = record[key];
+      }
+    }
+    return filters;
+  } catch {
+    return {};
   }
 }
 
@@ -98,22 +239,127 @@ function mapUserRow(row: Record<string, unknown>): StoredUser {
 }
 
 function mapAnnouncementRow(row: Record<string, unknown>): Announcement {
+  const id = String(row.id);
+  const source = String(row.source) as Announcement['source'];
+  const institution = String(row.institution);
+  const title = String(row.title);
+  const summary = String(row.summary);
+
+  const hasEmploymentType = typeof row.employment_type === 'string' && row.employment_type.length > 0;
+  const hasNoticeType = typeof row.notice_type === 'string' && row.notice_type.length > 0;
+  const hasExamType = typeof row.exam_type === 'string' && row.exam_type.length > 0;
+  const fallbackClassification =
+    hasEmploymentType && hasNoticeType && hasExamType
+      ? null
+      : classifyAnnouncement({ source, institution, title, description: summary });
+
   return {
-    id: String(row.id),
+    id,
     externalId: String(row.external_id),
-    source: String(row.source) as Announcement['source'],
+    source,
     sourceName: String(row.source_name),
     sourceUrl: String(row.source_url),
-    institution: String(row.institution),
-    title: String(row.title),
+    institution,
+    title,
     category: String(row.category) as Announcement['category'],
     city: String(row.city),
     status: String(row.status) as Announcement['status'],
     publishedAt: String(row.published_at),
     deadlineAt: String(row.deadline_at),
-    quota: typeof row.quota === 'number' ? row.quota : row.quota != null ? Number(row.quota) : null,
-    summary: String(row.summary),
+    quota:
+      typeof row.quota === 'number'
+        ? row.quota
+        : row.quota != null
+          ? Number(row.quota)
+          : null,
+    summary,
     criteria: safeParseCriteria(row.criteria_json),
+    employmentType: hasEmploymentType
+      ? (String(row.employment_type) as EmploymentType)
+      : fallbackClassification?.employmentType ?? 'diger',
+    noticeType: hasNoticeType
+      ? (String(row.notice_type) as NoticeType)
+      : fallbackClassification?.noticeType ?? 'ilan',
+    examType: hasExamType
+      ? (String(row.exam_type) as ExamType)
+      : fallbackClassification?.examType ?? 'unspecified',
+    organizationUnit: row.organization_unit != null ? String(row.organization_unit) : null,
+    applyUrl: row.apply_url != null ? String(row.apply_url) : null,
+    verifiedSources: safeParseVerifiedSources(row.verified_sources_json),
+    enrichmentStatus:
+      typeof row.enrichment_status === 'string' && row.enrichment_status
+        ? (String(row.enrichment_status) as EnrichmentStatus)
+        : 'pending',
+    contentHash: row.content_hash != null ? String(row.content_hash) : null,
+    lastSeenAt: row.last_seen_at != null ? String(row.last_seen_at) : null,
+    isDemo: row.is_demo != null ? Boolean(Number(row.is_demo)) : isLegacySeedId(id),
+  };
+}
+
+function mapPositionRow(row: Record<string, unknown>): AnnouncementPosition {
+  return {
+    id: String(row.id),
+    announcementId: String(row.announcement_id),
+    title: String(row.title),
+    unvan: row.unvan != null ? String(row.unvan) : null,
+    city: String(row.city),
+    district: row.district != null ? String(row.district) : null,
+    quota:
+      typeof row.quota === 'number'
+        ? row.quota
+        : row.quota != null
+          ? Number(row.quota)
+          : null,
+    educationLevel:
+      row.education_level != null
+        ? (String(row.education_level) as AnnouncementPosition['educationLevel'])
+        : null,
+    kpssScoreType:
+      row.kpss_score_type != null
+        ? (String(row.kpss_score_type) as AnnouncementPosition['kpssScoreType'])
+        : null,
+    minKpssScore:
+      typeof row.min_kpss_score === 'number'
+        ? row.min_kpss_score
+        : row.min_kpss_score != null
+          ? Number(row.min_kpss_score)
+          : null,
+    maxAge:
+      typeof row.max_age === 'number'
+        ? row.max_age
+        : row.max_age != null
+          ? Number(row.max_age)
+          : null,
+    militaryRequired: Boolean(Number(row.military_required ?? 0)),
+    qualificationCodes: safeParseArray(row.qualification_codes_json),
+    evaluationMethod: row.evaluation_method != null ? String(row.evaluation_method) : null,
+    isInterviewFree: Boolean(Number(row.is_interview_free ?? 0)),
+    requirementsSummary: String(row.requirements_summary ?? ''),
+  };
+}
+
+function mapCheckpointRow(row: Record<string, unknown>): SourceCheckpoint {
+  return {
+    source: String(row.source),
+    etag: row.etag != null ? String(row.etag) : null,
+    lastModified: row.last_modified != null ? String(row.last_modified) : null,
+    bodyHash: row.body_hash != null ? String(row.body_hash) : null,
+    lastCheckedAt: String(row.last_checked_at),
+    lastChangedAt: row.last_changed_at != null ? String(row.last_changed_at) : null,
+    activeCount: Number(row.active_count ?? 0),
+    lastError: row.last_error != null ? String(row.last_error) : null,
+  };
+}
+
+function mapSavedSearchRow(row: Record<string, unknown>): SavedSearchRecord {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    name: String(row.name),
+    filters: safeParseSavedSearchFilters(row.filters_json),
+    notifyPush: Boolean(Number(row.notify_push ?? 1)),
+    notifyEmail: Boolean(Number(row.notify_email ?? 1)),
+    createdAt: String(row.created_at),
   };
 }
 
@@ -146,6 +392,12 @@ export class D1Adapter implements DatabaseAdapter {
 
   constructor(private readonly db: D1DatabaseLike) {}
 
+  private async runBatched(stmts: D1PreparedStatementLike[]): Promise<void> {
+    for (let i = 0; i < stmts.length; i += D1_BATCH_CHUNK_SIZE) {
+      await this.db.batch(stmts.slice(i, i + D1_BATCH_CHUNK_SIZE));
+    }
+  }
+
   private async ensureSeeded(): Promise<void> {
     if (!this.seededPromise) {
       this.seededPromise = (async () => {
@@ -156,14 +408,21 @@ export class D1Adapter implements DatabaseAdapter {
           return;
         }
         const now = new Date().toISOString();
-        const stmts = INITIAL_ANNOUNCEMENTS.map((item) =>
-          this.db
+        const stmts = INITIAL_ANNOUNCEMENTS.map((item) => {
+          const cls = classifyAnnouncement({
+            source: item.source,
+            institution: item.institution,
+            title: item.title,
+            description: item.summary,
+          });
+          return this.db
             .prepare(
               `INSERT OR IGNORE INTO announcements (
                 id, external_id, source, source_name, source_url, institution,
                 title, category, city, status, published_at, deadline_at,
-                quota, summary, criteria_json, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                quota, summary, criteria_json, created_at, updated_at,
+                employment_type, notice_type, exam_type, enrichment_status, is_demo
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .bind(
               item.id,
@@ -183,10 +442,15 @@ export class D1Adapter implements DatabaseAdapter {
               JSON.stringify(item.criteria),
               now,
               now,
-            ),
-        );
+              item.employmentType ?? cls.employmentType,
+              item.noticeType ?? cls.noticeType,
+              item.examType ?? cls.examType,
+              item.enrichmentStatus ?? 'enriched',
+              1,
+            );
+        });
         if (stmts.length > 0) {
-          await this.db.batch(stmts);
+          await this.runBatched(stmts);
         }
       })().catch((err) => {
         this.seededPromise = null;
@@ -312,6 +576,7 @@ export class D1Adapter implements DatabaseAdapter {
     if (!existing) return false;
 
     await this.db.batch([
+      this.db.prepare('DELETE FROM saved_searches WHERE user_id = ?').bind(userId),
       this.db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').bind(userId),
       this.db.prepare('DELETE FROM saved_announcements WHERE user_id = ?').bind(userId),
       this.db.prepare('DELETE FROM reminder_logs WHERE user_id = ?').bind(userId),
@@ -416,7 +681,12 @@ export class D1Adapter implements DatabaseAdapter {
       educationLevel: (row.education_level as EducationLevel | null) ?? null,
       departmentId: row.department_id != null ? String(row.department_id) : null,
       kpssScoreType: (row.kpss_score_type as KpssScoreType | null) ?? null,
-      kpssScore: typeof row.kpss_score === 'number' ? row.kpss_score : row.kpss_score != null ? Number(row.kpss_score) : null,
+      kpssScore:
+        typeof row.kpss_score === 'number'
+          ? row.kpss_score
+          : row.kpss_score != null
+            ? Number(row.kpss_score)
+            : null,
       residenceCity: row.residence_city != null ? String(row.residence_city) : null,
       militaryStatus: (row.military_status as MilitaryStatus | null) ?? null,
       driverLicenses: safeParseArray(row.driver_licenses_json),
@@ -463,13 +733,34 @@ export class D1Adapter implements DatabaseAdapter {
     return { ...profile };
   }
 
-  async listAnnouncements(filter?: AnnouncementFilter): Promise<Announcement[]> {
+  async listAnnouncements(filter?: ListAnnouncementsFilter): Promise<Announcement[]> {
     await this.ensureSeeded();
     const res = await this.db
       .prepare('SELECT * FROM announcements ORDER BY published_at DESC')
       .all<Record<string, unknown>>();
     const all = (res.results ?? []).map(mapAnnouncementRow);
-    return filterAnnouncements(all, filter);
+    const hasLive = all.some((item) => !isDemoAnnouncement(item));
+    const shouldExcludeDemo =
+      filter?.excludeDemo === true || (filter?.excludeDemo !== false && hasLive);
+
+    const candidates = shouldExcludeDemo
+      ? all.filter((item) => !isDemoAnnouncement(item))
+      : all;
+
+    const filtered = filterAnnouncements(candidates, filter);
+    if (filtered.length === 0) return [];
+
+    const positionsMap = await this.listPositionsForAnnouncements(
+      filtered.map((item) => item.id),
+    );
+    return filtered.map((item) => {
+      const positions = positionsMap[item.id] ?? [];
+      return {
+        ...item,
+        positions,
+        positionsCount: positions.length,
+      };
+    });
   }
 
   async getAnnouncementById(id: string): Promise<Announcement | null> {
@@ -478,59 +769,146 @@ export class D1Adapter implements DatabaseAdapter {
       .prepare('SELECT * FROM announcements WHERE id = ? LIMIT 1')
       .bind(id)
       .first<Record<string, unknown>>();
-    return row ? mapAnnouncementRow(row) : null;
+    if (!row) return null;
+    const item = mapAnnouncementRow(row);
+    const positions = await this.listAnnouncementPositions(item.id);
+    return {
+      ...item,
+      positions,
+      positionsCount: positions.length,
+    };
   }
 
   async upsertAnnouncements(items: Announcement[]): Promise<UpsertAnnouncementsResult> {
     await this.ensureSeeded();
+    if (items.length === 0) {
+      const countRow = await this.db
+        .prepare('SELECT COUNT(*) as total FROM announcements')
+        .first<{ total: number }>();
+      return { inserted: 0, updated: 0, total: countRow ? Number(countRow.total) : 0 };
+    }
+
+    const existingRowsRes = await this.db
+      .prepare('SELECT id, external_id, verified_sources_json FROM announcements')
+      .all<Record<string, unknown>>();
+    const byId = new Map<string, { id: string; verifiedSources: VerifiedSourceRef[] }>();
+    const byExt = new Map<string, { id: string; verifiedSources: VerifiedSourceRef[] }>();
+    for (const row of existingRowsRes.results ?? []) {
+      const entry = {
+        id: String(row.id),
+        verifiedSources: safeParseVerifiedSources(row.verified_sources_json),
+      };
+      byId.set(entry.id, entry);
+      if (row.external_id != null) {
+        byExt.set(String(row.external_id), entry);
+      }
+    }
+
     let inserted = 0;
     let updated = 0;
     const now = new Date().toISOString();
+    const stmts: D1PreparedStatementLike[] = [];
 
     for (const item of items) {
-      const existing = await this.db
-        .prepare('SELECT id FROM announcements WHERE id = ? OR external_id = ? LIMIT 1')
-        .bind(item.id, item.externalId)
-        .first<{ id: string }>();
-
+      const existing = byId.get(item.id) ?? byExt.get(item.externalId);
       const targetId = existing ? existing.id : item.id;
       if (existing) {
-        await this.db
-          .prepare(
-            `UPDATE announcements SET
-              source = ?, source_name = ?, source_url = ?, institution = ?,
-              title = ?, category = ?, city = ?, status = ?,
-              published_at = ?, deadline_at = ?, quota = ?, summary = ?,
-              criteria_json = ?, updated_at = ?
-            WHERE id = ?`,
-          )
-          .bind(
-            item.source,
-            item.sourceName,
-            item.sourceUrl,
-            item.institution,
-            item.title,
-            item.category,
-            item.city,
-            item.status,
-            item.publishedAt,
-            item.deadlineAt,
-            item.quota,
-            item.summary,
-            JSON.stringify(item.criteria),
-            now,
-            targetId,
-          )
-          .run();
         updated += 1;
       } else {
-        await this.db
+        inserted += 1;
+      }
+
+      const cls = classifyAnnouncement({
+        source: item.source,
+        institution: item.institution,
+        title: item.title,
+        description: item.summary,
+      });
+
+      const incomingEnrichment: EnrichmentStatus = item.enrichmentStatus ?? 'pending';
+      const employmentType = item.employmentType ?? cls.employmentType;
+      const noticeType = item.noticeType ?? cls.noticeType;
+      const examType = item.examType ?? cls.examType;
+      const mergedSources = mergeVerifiedSources(existing?.verifiedSources, item.verifiedSources);
+      const verifiedSourcesJson = JSON.stringify(mergedSources);
+      const isDemoInt = isDemoAnnouncement(item) ? 1 : 0;
+
+      stmts.push(
+        this.db
           .prepare(
             `INSERT INTO announcements (
               id, external_id, source, source_name, source_url, institution,
               title, category, city, status, published_at, deadline_at,
-              quota, summary, criteria_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              quota, summary, criteria_json, created_at, updated_at,
+              employment_type, notice_type, exam_type, organization_unit,
+              apply_url, verified_sources_json, enrichment_status,
+              content_hash, last_seen_at, is_demo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              source = excluded.source,
+              source_name = excluded.source_name,
+              source_url = excluded.source_url,
+              institution = excluded.institution,
+              title = excluded.title,
+              category = excluded.category,
+              city = CASE
+                WHEN announcements.city != 'TÜRKİYE GENELİ' AND excluded.city = 'TÜRKİYE GENELİ'
+                THEN announcements.city
+                ELSE excluded.city
+              END,
+              status = excluded.status,
+              published_at = excluded.published_at,
+              deadline_at = CASE
+                WHEN announcements.enrichment_status = 'enriched'
+                  AND excluded.enrichment_status != 'enriched'
+                  AND (announcements.deadline_at > excluded.deadline_at OR excluded.deadline_at = excluded.published_at)
+                THEN announcements.deadline_at
+                ELSE excluded.deadline_at
+              END,
+              quota = CASE
+                WHEN announcements.enrichment_status = 'enriched' AND excluded.enrichment_status != 'enriched'
+                THEN COALESCE(announcements.quota, excluded.quota)
+                ELSE COALESCE(excluded.quota, announcements.quota)
+              END,
+              summary = CASE
+                WHEN announcements.enrichment_status = 'enriched' AND excluded.enrichment_status != 'enriched'
+                THEN announcements.summary
+                ELSE excluded.summary
+              END,
+              criteria_json = CASE
+                WHEN announcements.enrichment_status = 'enriched' AND excluded.enrichment_status != 'enriched'
+                THEN announcements.criteria_json
+                ELSE excluded.criteria_json
+              END,
+              updated_at = excluded.updated_at,
+              employment_type = excluded.employment_type,
+              notice_type = excluded.notice_type,
+              exam_type = CASE
+                WHEN announcements.enrichment_status = 'enriched'
+                  AND excluded.enrichment_status != 'enriched'
+                  AND announcements.exam_type != 'unspecified'
+                THEN announcements.exam_type
+                ELSE excluded.exam_type
+              END,
+              organization_unit = CASE
+                WHEN announcements.enrichment_status = 'enriched' AND excluded.enrichment_status != 'enriched'
+                THEN COALESCE(announcements.organization_unit, excluded.organization_unit)
+                ELSE COALESCE(excluded.organization_unit, announcements.organization_unit)
+              END,
+              apply_url = CASE
+                WHEN announcements.enrichment_status = 'enriched' AND excluded.enrichment_status != 'enriched'
+                THEN COALESCE(announcements.apply_url, excluded.apply_url)
+                ELSE COALESCE(excluded.apply_url, announcements.apply_url)
+              END,
+              verified_sources_json = excluded.verified_sources_json,
+              enrichment_status = CASE
+                WHEN announcements.enrichment_status = 'enriched' AND excluded.enrichment_status != 'enriched'
+                THEN 'enriched'
+                ELSE excluded.enrichment_status
+              END,
+              content_hash = excluded.content_hash,
+              last_seen_at = excluded.last_seen_at,
+              is_demo = excluded.is_demo`,
           )
           .bind(
             targetId,
@@ -550,11 +928,21 @@ export class D1Adapter implements DatabaseAdapter {
             JSON.stringify(item.criteria),
             now,
             now,
-          )
-          .run();
-        inserted += 1;
-      }
+            employmentType,
+            noticeType,
+            examType,
+            item.organizationUnit ?? null,
+            item.applyUrl ?? null,
+            verifiedSourcesJson,
+            incomingEnrichment,
+            item.contentHash ?? null,
+            item.lastSeenAt ?? now,
+            isDemoInt,
+          ),
+      );
     }
+
+    await this.runBatched(stmts);
 
     const countRow = await this.db
       .prepare('SELECT COUNT(*) as total FROM announcements')
@@ -564,6 +952,199 @@ export class D1Adapter implements DatabaseAdapter {
       inserted,
       updated,
       total: countRow ? Number(countRow.total) : 0,
+    };
+  }
+
+  async replaceAnnouncementPositions(
+    announcementId: string,
+    positions: AnnouncementPosition[],
+  ): Promise<void> {
+    const deleteStmt = this.db
+      .prepare('DELETE FROM announcement_positions WHERE announcement_id = ?')
+      .bind(announcementId);
+
+    const insertStmts = positions.map((pos) =>
+      this.db
+        .prepare(
+          `INSERT INTO announcement_positions (
+            id, announcement_id, title, unvan, city, district, quota,
+            education_level, kpss_score_type, min_kpss_score, max_age,
+            military_required, qualification_codes_json, evaluation_method,
+            is_interview_free, requirements_summary
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          pos.id,
+          announcementId,
+          pos.title,
+          pos.unvan,
+          pos.city,
+          pos.district,
+          pos.quota,
+          pos.educationLevel,
+          pos.kpssScoreType,
+          pos.minKpssScore,
+          pos.maxAge,
+          pos.militaryRequired ? 1 : 0,
+          JSON.stringify(pos.qualificationCodes ?? []),
+          pos.evaluationMethod,
+          pos.isInterviewFree ? 1 : 0,
+          pos.requirementsSummary ?? '',
+        ),
+    );
+
+    await this.runBatched([deleteStmt, ...insertStmts]);
+  }
+
+  async listAnnouncementPositions(announcementId: string): Promise<AnnouncementPosition[]> {
+    const res = await this.db
+      .prepare('SELECT * FROM announcement_positions WHERE announcement_id = ? ORDER BY id ASC')
+      .bind(announcementId)
+      .all<Record<string, unknown>>();
+    return (res.results ?? []).map(mapPositionRow);
+  }
+
+  async listPositionsForAnnouncements(
+    announcementIds: string[],
+  ): Promise<Record<string, AnnouncementPosition[]>> {
+    const uniqueIds = Array.from(new Set(announcementIds.filter(Boolean)));
+    const result: Record<string, AnnouncementPosition[]> = {};
+    if (uniqueIds.length === 0) return result;
+
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < uniqueIds.length; i += CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(i, i + CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(', ');
+      const res = await this.db
+        .prepare(
+          `SELECT * FROM announcement_positions WHERE announcement_id IN (${placeholders}) ORDER BY id ASC`,
+        )
+        .bind(...chunk)
+        .all<Record<string, unknown>>();
+
+      for (const row of res.results ?? []) {
+        const mapped = mapPositionRow(row);
+        if (!result[mapped.announcementId]) {
+          result[mapped.announcementId] = [];
+        }
+        result[mapped.announcementId].push(mapped);
+      }
+    }
+
+    return result;
+  }
+
+  async getSourceCheckpoint(source: string): Promise<SourceCheckpoint | null> {
+    const row = await this.db
+      .prepare('SELECT * FROM source_checkpoints WHERE source = ? LIMIT 1')
+      .bind(source)
+      .first<Record<string, unknown>>();
+    return row ? mapCheckpointRow(row) : null;
+  }
+
+  async upsertSourceCheckpoint(cp: SourceCheckpoint): Promise<SourceCheckpoint> {
+    await this.db
+      .prepare(
+        `INSERT INTO source_checkpoints (
+          source, etag, last_modified, body_hash,
+          last_checked_at, last_changed_at, active_count, last_error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source) DO UPDATE SET
+          etag = excluded.etag,
+          last_modified = excluded.last_modified,
+          body_hash = excluded.body_hash,
+          last_checked_at = excluded.last_checked_at,
+          last_changed_at = excluded.last_changed_at,
+          active_count = excluded.active_count,
+          last_error = excluded.last_error`,
+      )
+      .bind(
+        cp.source,
+        cp.etag,
+        cp.lastModified,
+        cp.bodyHash,
+        cp.lastCheckedAt,
+        cp.lastChangedAt,
+        cp.activeCount,
+        cp.lastError,
+      )
+      .run();
+    return { ...cp };
+  }
+
+  async listSourceCheckpoints(): Promise<SourceCheckpoint[]> {
+    const res = await this.db
+      .prepare('SELECT * FROM source_checkpoints ORDER BY source ASC')
+      .all<Record<string, unknown>>();
+    return (res.results ?? []).map(mapCheckpointRow);
+  }
+
+  async markExpiredAnnouncements(
+    referenceDate = new Date().toISOString().slice(0, 10),
+  ): Promise<number> {
+    const now = new Date().toISOString();
+    const res = await this.db
+      .prepare(
+        `UPDATE announcements SET status = 'kapali', updated_at = ?
+         WHERE status = 'acik' AND deadline_at < ?`,
+      )
+      .bind(now, referenceDate)
+      .run();
+    return res.meta?.changes ?? 0;
+  }
+
+  async pruneNoisyAndDemoProductionRows(): Promise<PruneRowsResult> {
+    const res = await this.db
+      .prepare('SELECT id, source, source_url, title, summary, is_demo FROM announcements')
+      .all<Record<string, unknown>>();
+    const rows = res.results ?? [];
+
+    let hasLive = false;
+    const legacyIds: string[] = [];
+    const noisyIds: string[] = [];
+
+    for (const row of rows) {
+      const id = String(row.id);
+      const isDemo = row.is_demo != null ? Boolean(Number(row.is_demo)) : isLegacySeedId(id);
+      if (isLegacySeedId(id) && !isDemo) {
+        legacyIds.push(id);
+      }
+      if (!isLegacySeedId(id) && !isDemo) {
+        const candidate = {
+          id,
+          source: String(row.source) as Announcement['source'],
+          sourceUrl: row.source_url != null ? String(row.source_url) : undefined,
+          title: String(row.title),
+          summary: String(row.summary ?? ''),
+          isDemo,
+        };
+        if (isNoisyNonRecruitmentRow(candidate)) {
+          noisyIds.push(id);
+        } else {
+          hasLive = true;
+        }
+      }
+    }
+
+    if (!hasLive) {
+      return { markedDemo: 0, prunedNoisy: 0 };
+    }
+
+    const stmts: D1PreparedStatementLike[] = [];
+    for (const id of legacyIds) {
+      stmts.push(this.db.prepare('UPDATE announcements SET is_demo = 1 WHERE id = ?').bind(id));
+    }
+    for (const id of noisyIds) {
+      stmts.push(this.db.prepare('DELETE FROM announcements WHERE id = ?').bind(id));
+    }
+
+    if (stmts.length > 0) {
+      await this.runBatched(stmts);
+    }
+
+    return {
+      markedDemo: legacyIds.length,
+      prunedNoisy: noisyIds.length,
     };
   }
 
@@ -638,6 +1219,45 @@ export class D1Adapter implements DatabaseAdapter {
       .bind(userId)
       .first<{ total: number }>();
     return row ? Number(row.total) : 0;
+  }
+
+  async createSavedSearch(record: SavedSearchRecord): Promise<SavedSearchRecord> {
+    await this.db
+      .prepare(
+        `INSERT INTO saved_searches (
+          id, user_id, name, filters_json, notify_push, notify_email, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        record.id,
+        record.userId,
+        record.name,
+        JSON.stringify(record.filters ?? {}),
+        record.notifyPush ? 1 : 0,
+        record.notifyEmail ? 1 : 0,
+        record.createdAt,
+      )
+      .run();
+    return {
+      ...record,
+      filters: { ...record.filters },
+    };
+  }
+
+  async listSavedSearches(userId: string): Promise<SavedSearchRecord[]> {
+    const res = await this.db
+      .prepare('SELECT * FROM saved_searches WHERE user_id = ? ORDER BY created_at DESC')
+      .bind(userId)
+      .all<Record<string, unknown>>();
+    return (res.results ?? []).map(mapSavedSearchRow);
+  }
+
+  async deleteSavedSearch(userId: string, id: string): Promise<boolean> {
+    const res = await this.db
+      .prepare('DELETE FROM saved_searches WHERE user_id = ? AND id = ?')
+      .bind(userId, id)
+      .run();
+    return (res.meta?.changes ?? 0) > 0;
   }
 
   async getNotificationPrefs(userId: string): Promise<NotificationPreferences | null> {

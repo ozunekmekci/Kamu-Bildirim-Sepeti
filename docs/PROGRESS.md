@@ -1,7 +1,20 @@
 # Kamu Bildirim Sepeti - İlerleme ve Devir Defteri
 
 **Son Güncelleme:** 2026-11-26  
-**Aktif Faz:** Faz 6 (Kariyer Kapısı Canlı RSS, Worker CPU 1102 Çözümü ve Canlı Cloudflare D1/Workers Dağıtımı - Tamamlandı)
+**Aktif Faz:** Faz 7 (Maksimum Veri Kalitesi, 5 Dakikalık Canlı Senkronizasyon, Alt Kadro D1 Şeması ve Premium UI - Tamamlandı)
+
+## Faz 7 Tamamlananlar
+- [x] **Yapısal Kaynak Bağlayıcıları ve Taksonomi (`src/modules/announcements/{types,taxonomy,connectors,parsers,index}.ts`, `scripts/probe-sources.ts`, `tests/phase7-sources-taxonomy.test.ts`):** Kariyer Kapısı JSON API (`GetIseAlimPage`, `GetIlanPreviewPublic`, `GetAltIlanInfoByIlanIdPublic` + BBCode temizleyici + RSS fallback hata kaydı), SBB Kamu İlan (`kamuilan.sbb.gov.tr` `#nav2` + `#manset` + `İPTAL`/`Düzeltme` tespiti), İŞKUR Kamu Memur (`iskur.gov.tr/ilanlar/kamu-memur-alim-ilanlari/` 18 aktif il), pozitif Resmî Gazete filtresi, 81 il/ilçe/üniversite il çıkarımı, iç istihdam/sınav/duyuru taksonomisi ve çapraz kaynak tekilleştirme eklendi (`probe:sources`: 183 ham -> 145 tekil ilan, %73 il doluluğu).
+- [x] **D1 Şeması `0004`, Push-Ingest, 5 Dakikalık Senkronizasyon ve Eşleştirme v2 (`migrations/0004_phase7_enrichment.sql`, `src/modules/db/`, `src/modules/announcements/service.ts`, `src/modules/matching/engine.ts`, `src/app/api/**`, `wrangler.jsonc`, `scripts/sync-remote.ts`, `docs/examples/sync-official-sources.yml`, `tests/phase7-db-sync-matching.test.ts`):** `announcement_positions`, `source_checkpoints`, `saved_searches` + 10 yeni `announcements` sütunu eklendi; 10 tablolu KVKK silme paritesi korundu; monotonik `enriched` korumalı chunked upsert + İŞKUR ihale/IT gürültüsü temizliği eklendi; Worker Cron `*/5 * * * *` (devre kesicili `8.2s` tamamlama) + yetkili `POST /api/cron/ingest` + `npm run sync:remote` ile Cloudflare WAF aşılıp 179 alt kadro üretim D1'e işlendi; pozisyon bazlı Eşleştirme Motoru v2 ve `/api/saved-searches` eklendi.
+- [x] **Hallmark & Antislop Premium UI (`src/app/globals.css`, `src/components/{AnnouncementFeed,AnnouncementDetailClient}.tsx`, `src/app/{ilan/[id],ayarlar,kaynak/[slug]}/page.tsx`, `src/modules/analytics/public-insights.ts`, `tests/phase7-ui.test.tsx`):** Canlı güncellik bandı, iç kategori sekmeleri (`Memur A/B`, `Sözleşmeli 4/B`, `Akademik`, `Kamu İşçi`, `Askerî & Kolluk`), `Mülakatsız (KPSS)` filtresi, çoklu kaynak/iptal rozetleri, alt kadrolu slide-over çekmece, detaylı `/ilan/[id]` Alt Kadrolar tablosu, tek tık arama alarmı + `/ayarlar` alarm/kaynak durumu ve `kamuilan-sbb` kaynağı eklendi.
+
+## Doğrulama Özeti (Faz 7 Son Doğrulama)
+- [x] SQLite şema bütünlüğü (`0001..0004`, `PRAGMA foreign_keys = ON`): `PRAGMA foreign_key_check = []`, kaskad silme doğrulandı
+- [x] `npm test`: **34/34 test dosyası, 373/373 test geçti (`9.28s`, `EXIT=0`)**
+- [x] `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npx opennextjs-cloudflare build`, `npx wrangler deploy --dry-run`: **EXIT=0** (`28838.18 KiB` / gzip `3479.21 KiB`, startup `16 ms`)
+- [x] `node scripts/browser-audit.mjs` ve görsel ekran görüntüsü incelemesi: **`[AUDIT PASSED]`** (14 rota HTTP 200, 0 hata, 20/20 matriste 0 taşma, 5/5 R-35 etkileşimi geçti)
+- [x] Uzak D1 `0004` + canlı deploy (`https://kpssportal.ozunekmekci.workers.dev`, Version `eae0b0ed-4bb7-419f-a457-a506b5a65dfc`, `*/5 * * * *`) + canlı `sync:remote` (`145` tekil ilan, `179` alt kadro) + hızlı Worker `/api/cron/sync` (`8.2s`, HTTP 200)
+- [x] Canlı D1 veri kalitesi denetimi: `151` canlı ilan (`sbb` 90, `iskur` 36, `kariyer_kapisi` 25), **`179` `announcement_positions`** (`22` ilanda), **`%77.48` il doluluk oranı (`117/151`)**, **`0` ihale/TV/DNS/SiEM/Stratejik Plan gürültüsü**, 12/12 canlı uç ve sayfa HTTP 200
 
 ## Faz 6 Tamamlananlar
 - [x] **Kariyer Kapısı Resmî RSS Entegrasyonu (`src/modules/announcements/parsers.ts`, `scripts/probe-sources.ts`, `tests/phase6-kariyer-rss.test.ts`):** `OFFICIAL_SOURCE_URLS.kariyer_kapisi.feedUrl = 'https://kariyerkapisi.gov.tr/RSS'` tanımlandı; `splitInstitutionAndTitle` Türkçe büyük/küçük harf (`normalizeTrSearch`) ve üniversite/komutanlık kurum ekleri ile güncellendi; `IlanDetay?i=<uuid>` kalıcı ID çıkarımı eklendi (`npm run probe:sources`: toplam `53` canlı ilan = Kariyer Kapısı `25` + İŞKUR `12` + Resmî Gazete `16`).
@@ -109,6 +122,8 @@
    - Ödeme sağlayıcıları: `PAYMENT_PROVIDER` (`demo` | `stripe` | `iyzico`), `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `IYZICO_API_KEY`, `IYZICO_SECRET_KEY`, `IYZICO_BASE_URL`
    - Web Push (VAPID): `VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
 
-## Sıradaki Başlangıç Adımı (Canlı Operasyon ve Opsiyonel İyileştirmeler)
-- [x] Harici Cloudflare D1 (`37ec183a-11be-4a6c-b0fd-caa2039677f7`), `0001..0003` uzak migrasyonlar, üretim gizli değişkenleri, canlı dağıtım (`https://kpssportal.ozunekmekci.workers.dev`) ve ilk canlı `POST /api/cron/sync` (`53` canlı ilan) tamamlandı.
-- [ ] Opsiyonel canlı entegrasyon anahtarlarını ekle: `RESEND_API_KEY`/`MAILCHANNELS_API_KEY`, `STRIPE_*`/`IYZICO_*`, özel alan adı (`NEXT_PUBLIC_SITE_URL`) ve Kariyer Kapısı ilan detay/son tarih zenginleştirmesi.
+## Sıradaki Başlangıç Adımı (Yol Haritası Sırasıyla)
+- [x] **Faz 7 Tamamlandı:** Yapısal SBB/İŞKUR Kamu Memur/Kariyer Kapısı API + 179 alt kadro, 5 dk Cron + push-ingest, D1 `0004` ve Premium UI/UX canlıda doğrulandı.
+- [ ] **GitHub Actions Aktivasyonu (Opsiyonel Kullanıcı Adımı):** Yerel OAuth jetonunda `workflow` izni olmadığından hazır şablon `docs/examples/sync-official-sources.yml` konumuna kaydedildi; bunu GitHub web arayüzünden `docs/examples/sync-official-sources.yml` olarak ekleyip repo `Secrets -> CRON_SECRET` tanımlayabilirsiniz (veya yerel `npm run sync:remote` kullanabilirsiniz).
+- [ ] **Faz 9 (Orta Öncelik):** Worker paket boyutunu (`28.8 MB`) küçültmek için 9.703 KPSS kaydını ayrıştırma, OpenNext R2 cache katmanı ve `/analiz` içine SBB kartı + canlı ayrıştırıcı alarm paneli eklenmesi.
+- [ ] **Faz 10 (Düşük Öncelik) & Faz 8 (En Son - Demo modunda kalsın):** Programatik `/nitelik/[kod]` + TWA Android yayını; ödeme/e-posta (`Resend`/`Stripe`/`iyzico`) ürün olgunlaşınca aktif edilecek.

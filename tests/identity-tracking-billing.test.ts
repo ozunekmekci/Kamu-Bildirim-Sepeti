@@ -311,6 +311,7 @@ describe('D1Adapter', () => {
       .filter((q) => q.query.startsWith('DELETE FROM'))
       .map((q) => q.query);
     expect(deleteTables).toEqual([
+      'DELETE FROM saved_searches WHERE user_id = ?',
       'DELETE FROM push_subscriptions WHERE user_id = ?',
       'DELETE FROM saved_announcements WHERE user_id = ?',
       'DELETE FROM reminder_logs WHERE user_id = ?',

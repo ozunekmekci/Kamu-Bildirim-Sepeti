@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import AppShell from '@/components/AppShell';
 import { getSourceLandingData } from '@/modules/analytics';
+import { getDb } from '@/modules/db';
 
 interface KaynakPageProps {
   params: Promise<{ slug: string }>;
@@ -24,9 +25,22 @@ export async function generateStaticParams() {
   return VALID_SOURCE_SLUGS.map((slug) => ({ slug }));
 }
 
+async function resolveSourceData(slug: string) {
+  try {
+    const db = await getDb();
+    const items = await db.listAnnouncements({ status: 'hepsi' });
+    if (items.length > 0) {
+      return getSourceLandingData(slug, items);
+    }
+  } catch {
+    // Fallback to default seed dataset
+  }
+  return getSourceLandingData(slug);
+}
+
 export async function generateMetadata({ params }: KaynakPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const data = getSourceLandingData(slug);
+  const data = await resolveSourceData(slug);
   if (!data) {
     return {
       title: 'Resmî Kaynak Bulunamadı',
@@ -43,7 +57,7 @@ export async function generateMetadata({ params }: KaynakPageProps): Promise<Met
 
 export default async function KaynakLandingPage({ params }: KaynakPageProps) {
   const { slug } = await params;
-  const data = getSourceLandingData(slug);
+  const data = await resolveSourceData(slug);
 
   if (!data) {
     notFound();
@@ -75,7 +89,7 @@ export default async function KaynakLandingPage({ params }: KaynakPageProps) {
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-[#b91c1c] dark:text-[#ef4444]">
               <Globe className="w-4 h-4" aria-hidden="true" />
-              <span className="text-xs font-bold uppercase tracking-wider">Resmî İlan Kaynağı</span>
+              <span className="text-xs font-semibold">Resmî İlan Kaynağı</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
               {data.sourceName} İlanları

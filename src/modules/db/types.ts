@@ -1,7 +1,9 @@
 import type {
   Announcement,
   AnnouncementFilter,
+  AnnouncementPosition,
   MilitaryStatus,
+  SourceCheckpoint,
 } from '@/modules/announcements/types';
 
 export type PlanTier = 'free' | 'premium';
@@ -100,6 +102,16 @@ export interface Entitlements {
   canInstantAlert: boolean;
 }
 
+export interface MatchedPositionResult {
+  id: string;
+  title: string;
+  city: string;
+  quota: number | null;
+  scoreMargin: number | null;
+  eligible: boolean;
+  missingReasons: string[];
+}
+
 export interface MatchEvaluation {
   announcementId: string;
   eligible: boolean;
@@ -107,6 +119,10 @@ export interface MatchEvaluation {
   matchedReasons: string[];
   missingReasons: string[];
   unknownReasons: string[];
+  matchedPositionCount?: number;
+  totalPositionCount?: number;
+  matchedPositions?: MatchedPositionResult[];
+  scoreMargin?: number | null;
 }
 
 export interface SavedAnnouncementRecord {
@@ -119,6 +135,27 @@ export interface SavedAnnouncementRecord {
 export interface SavedAnnouncementWithItem {
   savedAt: string;
   announcement: Announcement;
+}
+
+export interface SavedSearchFilters {
+  q?: string;
+  city?: string;
+  category?: string;
+  source?: string;
+  status?: string;
+  employmentType?: string;
+  examType?: string;
+  noticeType?: string;
+}
+
+export interface SavedSearchRecord {
+  id: string;
+  userId: string;
+  name: string;
+  filters: SavedSearchFilters;
+  notifyPush: boolean;
+  notifyEmail: boolean;
+  createdAt: string;
 }
 
 export interface ReminderLog {
@@ -156,6 +193,15 @@ export interface UpsertAnnouncementsResult {
   total: number;
 }
 
+export interface ListAnnouncementsFilter extends AnnouncementFilter {
+  excludeDemo?: boolean;
+}
+
+export interface PruneRowsResult {
+  markedDemo: number;
+  prunedNoisy: number;
+}
+
 export interface DatabaseAdapter {
   createUser(input: CreateUserInput): Promise<StoredUser>;
   findUserByEmail(email: string): Promise<StoredUser | null>;
@@ -180,9 +226,25 @@ export interface DatabaseAdapter {
   getProfile(userId: string): Promise<UserProfile | null>;
   upsertProfile(profile: UserProfile): Promise<UserProfile>;
 
-  listAnnouncements(filter?: AnnouncementFilter): Promise<Announcement[]>;
+  listAnnouncements(filter?: ListAnnouncementsFilter): Promise<Announcement[]>;
   getAnnouncementById(id: string): Promise<Announcement | null>;
   upsertAnnouncements(items: Announcement[]): Promise<UpsertAnnouncementsResult>;
+
+  replaceAnnouncementPositions(
+    announcementId: string,
+    positions: AnnouncementPosition[],
+  ): Promise<void>;
+  listAnnouncementPositions(announcementId: string): Promise<AnnouncementPosition[]>;
+  listPositionsForAnnouncements(
+    announcementIds: string[],
+  ): Promise<Record<string, AnnouncementPosition[]>>;
+
+  getSourceCheckpoint(source: string): Promise<SourceCheckpoint | null>;
+  upsertSourceCheckpoint(cp: SourceCheckpoint): Promise<SourceCheckpoint>;
+  listSourceCheckpoints(): Promise<SourceCheckpoint[]>;
+
+  markExpiredAnnouncements(referenceDate?: string): Promise<number>;
+  pruneNoisyAndDemoProductionRows(): Promise<PruneRowsResult>;
 
   listSavedAnnouncementIds(userId: string): Promise<string[]>;
   listSavedAnnouncements(userId: string): Promise<SavedAnnouncementWithItem[]>;
@@ -193,6 +255,10 @@ export interface DatabaseAdapter {
   ): Promise<SavedAnnouncementRecord>;
   removeSavedAnnouncement(userId: string, announcementId: string): Promise<boolean>;
   countSavedAnnouncements(userId: string): Promise<number>;
+
+  createSavedSearch(record: SavedSearchRecord): Promise<SavedSearchRecord>;
+  listSavedSearches(userId: string): Promise<SavedSearchRecord[]>;
+  deleteSavedSearch(userId: string, id: string): Promise<boolean>;
 
   getNotificationPrefs(userId: string): Promise<NotificationPreferences | null>;
   upsertNotificationPrefs(prefs: NotificationPreferences): Promise<NotificationPreferences>;

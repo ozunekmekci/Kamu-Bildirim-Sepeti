@@ -18,6 +18,10 @@ export const OFFICIAL_SOURCE_URLS: Record<
     url: 'https://kariyerkapisi.gov.tr',
     feedUrl: 'https://kariyerkapisi.gov.tr/RSS',
   },
+  sbb: {
+    name: 'SBB Kamu İlan',
+    url: 'https://kamuilan.sbb.gov.tr/',
+  },
   iskur: {
     name: 'İŞKUR',
     url: 'https://www.iskur.gov.tr/',
@@ -28,7 +32,7 @@ export const OFFICIAL_SOURCE_URLS: Record<
   },
 };
 
-function decodeHtmlEntities(input: string): string {
+export function decodeHtmlEntities(input: string): string {
   return input
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
@@ -40,13 +44,13 @@ function decodeHtmlEntities(input: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
 
-function stripTags(html: string): string {
+export function stripTags(html: string): string {
   return decodeHtmlEntities(html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '))
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function extractAttr(tagHtml: string, attrName: string): string | null {
+export function extractAttr(tagHtml: string, attrName: string): string | null {
   const regex = new RegExp(`${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i');
   const match = tagHtml.match(regex);
   if (!match) return null;
@@ -68,7 +72,7 @@ function extractByClassOrTag(block: string, classPatterns: string[]): string | n
   return null;
 }
 
-function resolveUrl(href: string | null, baseUrl: string): string {
+export function resolveUrl(href: string | null, baseUrl: string): string {
   if (!href) return baseUrl;
   const trimmed = href.trim();
   if (!trimmed || trimmed.startsWith('#') || /^(?:javascript|mailto|tel|data):/i.test(trimmed)) {
@@ -155,16 +159,27 @@ function detectCategory(text: string, defaultCategory: AnnouncementCategory): An
   return defaultCategory;
 }
 
-function extractQuota(text: string): number | null {
+export function extractQuota(text: string): number | null {
   const m =
     text.match(/(?:kontenjan|kadro|alınacak\s+kişi|kişi\s*sayısı|adet)\s*[:\-]?\s*(\d{1,5})/i) ||
-    text.match(/\b(\d{1,5})\s*(?:kişi|personel|memur|işçi|kadro)\b/i);
-  if (!m) return null;
-  const val = Number(m[1]);
-  return Number.isFinite(val) && val > 0 ? val : null;
+    text.match(
+      /\b(\d{1,5})\s*(?:adet\s+)?(?:kişi|personel|memur|işçi|kadro|öğretim\s+(?:üyesi|görevlisi|elemanı)|araştırma\s+görevlisi|uzman\s+yardımcısı|müfettiş\s+yardımcısı|sözleşmeli\s+[a-zçğıöşü]+)/i
+    );
+  if (m) {
+    const val = Number(m[1]);
+    return Number.isFinite(val) && val > 0 ? val : null;
+  }
+  const leading = text.match(/^\s*(\d{1,4})\s+(?:adet\s+)?[A-ZÇĞİÖŞÜa-zçğıöşü]/i);
+  if (leading) {
+    const val = Number(leading[1]);
+    if (Number.isFinite(val) && val > 0 && !(val >= 1990 && val <= 2099)) {
+      return val;
+    }
+  }
+  return null;
 }
 
-function extractCriteriaFromText(text: string, city: string): AnnouncementCriteria {
+export function extractCriteriaFromText(text: string, city: string): AnnouncementCriteria {
   const norm = normalizeTrSearch(text);
   const educationLevels: ('lisans' | 'onlisans' | 'ortaogretim')[] = [];
   if (norm.includes('onlisans') || norm.includes('on lisans') || norm.includes('myo')) {
@@ -217,6 +232,9 @@ function extractCriteriaFromText(text: string, city: string): AnnouncementCriter
     norm.includes('askerlik ile ilisigi') ||
     norm.includes('askerlikle ilisigi') ||
     norm.includes('askerlik gorevini tamamlamis') ||
+    norm.includes('askerligini yapmis') ||
+    norm.includes('askerligini tamamlamis') ||
+    norm.includes('askerlikten muaf') ||
     norm.includes('askerlik sarti');
 
   const summaryLines: string[] = [];
@@ -254,7 +272,7 @@ function hashSlug(text: string): string {
   return (hash >>> 0).toString(36);
 }
 
-function computeStatus(deadlineAt: string, referenceDate?: string): AnnouncementStatus {
+export function computeStatus(deadlineAt: string, referenceDate?: string): AnnouncementStatus {
   const ref = referenceDate ?? new Date().toISOString().slice(0, 10);
   return deadlineAt >= ref ? 'acik' : 'kapali';
 }
@@ -859,14 +877,22 @@ export function parseResmiGazeteHtml(html: string, referenceDate?: string): Anno
   return parseSourceHtml(html, 'resmi_gazete', 'atama', referenceDate);
 }
 
+type LegacyFetchSource = 'kariyer_kapisi' | 'iskur' | 'resmi_gazete';
+
 const SOURCE_PARSERS: Record<
-  Exclude<AnnouncementSource, 'osym_kpss'>,
+  LegacyFetchSource,
   (html: string, referenceDate?: string) => Announcement[]
 > = {
   kariyer_kapisi: parseKariyerKapisiHtml,
   iskur: parseIskurHtml,
   resmi_gazete: parseResmiGazeteHtml,
 };
+
+const LEGACY_FETCH_SOURCES: LegacyFetchSource[] = [
+  'kariyer_kapisi',
+  'iskur',
+  'resmi_gazete',
+];
 
 export async function fetchOfficialAnnouncements(
   fetcher?: typeof fetch,
@@ -878,10 +904,9 @@ export async function fetchOfficialAnnouncements(
   const errors: FetchErrorItem[] = [];
   const seenIds = new Set<string>();
 
-  const sources = Object.entries(OFFICIAL_SOURCE_URLS) as [
-    Exclude<AnnouncementSource, 'osym_kpss'>,
-    { name: string; url: string; feedUrl?: string }
-  ][];
+  const sources = LEGACY_FETCH_SOURCES.map(
+    (source) => [source, OFFICIAL_SOURCE_URLS[source]] as const
+  );
 
   if (!fetchFn) {
     for (const [source, meta] of sources) {

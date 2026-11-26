@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { syncOfficialSources } from '@/modules/announcements';
+import { syncOfficialSourcesV2 } from '@/modules/announcements/service';
 import { getDb } from '@/modules/db';
 import { generateId } from '@/modules/identity/crypto';
 import { createWebPushAdapter, dispatchPushForNewAnnouncements } from '@/modules/push';
@@ -39,27 +39,29 @@ export async function POST(request: Request) {
     (request.headers.get('cf-cron') ? 'cloudflare_cron' : 'api');
 
   const db = await getDb();
-  const existingAnnouncements = await db.listAnnouncements({ status: 'hepsi' });
+  const existingAnnouncements = await db.listAnnouncements({
+    status: 'hepsi',
+    excludeDemo: false,
+  });
   const existingIds = new Set(existingAnnouncements.map((item) => item.id));
 
-  const syncResult = await syncOfficialSources(async (items) => {
-    const res = await db.upsertAnnouncements(items);
-    return res.inserted + res.updated;
-  });
+  const syncResult = await syncOfficialSourcesV2(db);
 
-  const newAnnouncements = syncResult.items.filter((item) => !existingIds.has(item.id));
+  const newAlertCandidates = syncResult.items.filter(
+    (item) => !existingIds.has(item.id) && item.noticeType !== 'iptal',
+  );
   const emailAdapter = createEmailAdapter();
   const pushAdapter = createWebPushAdapter();
 
   const reminders = await dispatchPendingReminders(db, emailAdapter);
-  const newAlerts = await dispatchNewAnnouncementAlerts(db, newAnnouncements, emailAdapter);
-  const pushAlerts = await dispatchPushForNewAnnouncements(db, newAnnouncements, pushAdapter);
+  const newAlerts = await dispatchNewAnnouncementAlerts(db, newAlertCandidates, emailAdapter);
+  const pushAlerts = await dispatchPushForNewAnnouncements(db, newAlertCandidates, pushAdapter);
 
   const finishedAt = new Date().toISOString();
   const status =
     syncResult.errors.length === 0
       ? 'success'
-      : syncResult.syncedCount > 0
+      : syncResult.syncedCount > 0 || syncResult.dedupedCount > 0
         ? 'partial'
         : 'error';
 
@@ -78,6 +80,11 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       syncedCount: syncResult.syncedCount,
+      enrichedCount: syncResult.enrichedCount,
+      dedupedCount: syncResult.dedupedCount,
+      expiredCount: syncResult.expiredCount,
+      prunedNoisyCount: syncResult.prunedNoisyCount,
+      checkpoints: syncResult.checkpoints,
       errors: syncResult.errors,
       reminders,
       newAlerts,

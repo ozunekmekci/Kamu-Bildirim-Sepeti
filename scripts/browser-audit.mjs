@@ -615,9 +615,20 @@ async function main() {
     const homeFilterResult = await page.eval(`(async () => {
       const input = document.querySelector('#feed-search');
       if (!input) return { found: false };
-      const initialCount = document.querySelectorAll('a[href^="/ilan/"]').length;
+      const initialLinks = Array.from(document.querySelectorAll('a[href^="/ilan/"]'));
+      const initialCount = initialLinks.length;
+      const candidateTitles = initialLinks
+        .map((a) => (a.textContent || '').trim())
+        .filter((t) => t.length >= 8 && !/^İlan Detay/i.test(t));
+      const sampleTitle = candidateTitles[0] || '';
+      const searchToken =
+        sampleTitle
+          .split(' ')
+          .map((w) => w.replace(/[^a-zA-ZçğıöşüÇĞİÖŞÜ0-9]/g, ''))
+          .find((w) => w.length >= 6 && !/^(Personel|Alımı|Sözleşmeli|Memuru|İlanı)$/i.test(w)) ||
+        'Bakanlığı';
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, 'Adalet');
+      setter.call(input, searchToken);
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await new Promise((r) => setTimeout(r, 150));
       const filteredCards = Array.from(document.querySelectorAll('a[href^="/ilan/"]'));
@@ -627,13 +638,14 @@ async function main() {
       input.dispatchEvent(new Event('input', { bubbles: true }));
       return {
         found: true,
+        searchToken,
         initialCount,
         filteredCount,
-        hasAdalet: /Adalet/i.test(bodyText),
+        hasMatch: bodyText.toLocaleLowerCase('tr-TR').includes(searchToken.toLocaleLowerCase('tr-TR')),
       };
     })()`);
     summary.interactions.push({ check: 'home-search-filter', ...homeFilterResult });
-    if (!homeFilterResult.found || homeFilterResult.filteredCount === 0 || homeFilterResult.filteredCount >= homeFilterResult.initialCount || !homeFilterResult.hasAdalet) {
+    if (!homeFilterResult.found || homeFilterResult.filteredCount === 0 || homeFilterResult.filteredCount >= homeFilterResult.initialCount || !homeFilterResult.hasMatch) {
       failures.push(`Home feed search/filter failed: ${JSON.stringify(homeFilterResult)}`);
     }
     if (page.consoleErrors.length > 0 || page.pageErrors.length > 0) {
