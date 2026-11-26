@@ -15,6 +15,11 @@ const ALLOWED_FILTER_KEYS: ReadonlyArray<keyof SavedSearchFilters> = [
   'employmentType',
   'examType',
   'noticeType',
+  'educationLevel',
+  'kpssScoreType',
+  'maxKpssScore',
+  'driverLicense',
+  'department',
 ];
 
 function unauthorizedResponse() {
@@ -37,6 +42,8 @@ function sanitizeFilters(raw: unknown): SavedSearchFilters | null {
       if (trimmed) {
         cleaned[key] = trimmed.slice(0, 120);
       }
+    } else if (key === 'maxKpssScore' && typeof val === 'number' && Number.isFinite(val)) {
+      cleaned[key] = String(val);
     }
   }
   return cleaned;

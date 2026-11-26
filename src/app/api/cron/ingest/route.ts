@@ -22,7 +22,7 @@ interface IngestRequestPayload {
   triggeredBy?: unknown;
 }
 
-export async function POST(request: Request) {
+function authorizeCronRequest(request: Request): NextResponse | null {
   const expectedSecret = process.env.CRON_SECRET?.trim();
   if (!expectedSecret && process.env.NODE_ENV === 'production') {
     return NextResponse.json(
@@ -42,6 +42,38 @@ export async function POST(request: Request) {
         { status: 401 },
       );
     }
+  }
+  return null;
+}
+
+export async function GET(request: Request) {
+  const authError = authorizeCronRequest(request);
+  if (authError) {
+    return authError;
+  }
+
+  const db = await getDb();
+  const announcements = await db.listAnnouncements({
+    status: 'hepsi',
+    excludeDemo: true,
+  });
+  const enrichedIds = announcements
+    .filter((item) => item.enrichmentStatus === 'enriched')
+    .map((item) => item.id);
+
+  return NextResponse.json(
+    {
+      enrichedIds,
+      total: enrichedIds.length,
+    },
+    { status: 200 },
+  );
+}
+
+export async function POST(request: Request) {
+  const authError = authorizeCronRequest(request);
+  if (authError) {
+    return authError;
   }
 
   let body: IngestRequestPayload;

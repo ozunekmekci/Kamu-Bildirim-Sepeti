@@ -199,6 +199,12 @@ export function AnnouncementFeed({
   const [city, setCity] = useState<string>('hepsi');
   const [taxonomyTab, setTaxonomyTab] = useState<TaxonomyTabKey>('hepsi');
   const [interviewFreeOnly, setInterviewFreeOnly] = useState<boolean>(false);
+  const [educationLevel, setEducationLevel] = useState<
+    'hepsi' | 'lisans' | 'onlisans' | 'ortaogretim'
+  >('hepsi');
+  const [kpssScoreType, setKpssScoreType] = useState<'hepsi' | 'P3' | 'P93' | 'P94'>('hepsi');
+  const [kpssScoreInput, setKpssScoreInput] = useState<string>('');
+  const [driverLicense, setDriverLicense] = useState<string>('hepsi');
 
   // Matched tab state
   const [matchedLoading, setMatchedLoading] = useState<boolean>(false);
@@ -496,6 +502,14 @@ export function AnnouncementFeed({
     return counts;
   }, [statusScopedAnnouncements]);
 
+  const parsedMaxKpssScore = useMemo(() => {
+    const trimmed = kpssScoreInput.trim();
+    if (!trimmed) return undefined;
+    const val = Number(trimmed.replace(',', '.'));
+    if (!Number.isFinite(val) || val < 0 || val > 100) return undefined;
+    return val;
+  }, [kpssScoreInput]);
+
   const filteredList = useMemo(() => {
     if (activeTab === 'matched') return [];
     const base = filterAnnouncements(announcements, {
@@ -504,6 +518,10 @@ export function AnnouncementFeed({
       source,
       city: city === 'hepsi' ? undefined : city,
       examType: interviewFreeOnly ? 'kpss_only' : undefined,
+      educationLevel,
+      kpssScoreType,
+      maxKpssScore: parsedMaxKpssScore,
+      driverLicense: driverLicense === 'hepsi' ? undefined : driverLicense,
       q: query,
     });
     return base.filter((item) =>
@@ -518,6 +536,10 @@ export function AnnouncementFeed({
     query,
     taxonomyTab,
     interviewFreeOnly,
+    educationLevel,
+    kpssScoreType,
+    parsedMaxKpssScore,
+    driverLicense,
   ]);
 
   const filteredMatched = useMemo(() => {
@@ -529,6 +551,10 @@ export function AnnouncementFeed({
         source,
         city: city === 'hepsi' ? undefined : city,
         examType: interviewFreeOnly ? 'kpss_only' : undefined,
+        educationLevel,
+        kpssScoreType,
+        maxKpssScore: parsedMaxKpssScore,
+        driverLicense: driverLicense === 'hepsi' ? undefined : driverLicense,
         q: query,
       }
     ).filter((item) => matchesTaxonomyAndExam(item, taxonomyTab, interviewFreeOnly));
@@ -543,6 +569,10 @@ export function AnnouncementFeed({
     query,
     taxonomyTab,
     interviewFreeOnly,
+    educationLevel,
+    kpssScoreType,
+    parsedMaxKpssScore,
+    driverLicense,
   ]);
 
   const handleToggleSave = async (announcementId: string) => {
@@ -626,6 +656,10 @@ export function AnnouncementFeed({
       if (tabLabel) nameParts.push(tabLabel);
     }
     if (interviewFreeOnly) nameParts.push('Mülakatsız KPSS');
+    if (educationLevel !== 'hepsi') nameParts.push(EDUCATION_LABELS[educationLevel]);
+    if (kpssScoreType !== 'hepsi') nameParts.push(kpssScoreType);
+    if (parsedMaxKpssScore !== undefined) nameParts.push(`KPSS ${parsedMaxKpssScore}`);
+    if (driverLicense !== 'hepsi') nameParts.push(`${driverLicense} Ehliyet`);
     if (source !== 'hepsi') nameParts.push(SOURCE_LABELS[source]);
     if (category !== 'hepsi') nameParts.push(CATEGORY_LABELS[category]);
     const searchName = (nameParts.length > 0 ? nameParts.join(' / ') : 'Tüm Açık İlanlar').slice(
@@ -641,6 +675,10 @@ export function AnnouncementFeed({
     if (activeTab !== 'matched') filters.status = activeTab;
     if (taxonomyTab !== 'hepsi') filters.employmentType = taxonomyTab;
     if (interviewFreeOnly) filters.examType = 'kpss_only';
+    if (educationLevel !== 'hepsi') filters.educationLevel = educationLevel;
+    if (kpssScoreType !== 'hepsi') filters.kpssScoreType = kpssScoreType;
+    if (parsedMaxKpssScore !== undefined) filters.maxKpssScore = String(parsedMaxKpssScore);
+    if (driverLicense !== 'hepsi') filters.driverLicense = driverLicense;
 
     try {
       const res = await fetch('/api/saved-searches', {
@@ -694,6 +732,10 @@ export function AnnouncementFeed({
     setCity('hepsi');
     setTaxonomyTab('hepsi');
     setInterviewFreeOnly(false);
+    setEducationLevel('hepsi');
+    setKpssScoreType('hepsi');
+    setKpssScoreInput('');
+    setDriverLicense('hepsi');
   };
 
   const scrollToFeed = () => {
@@ -1034,6 +1076,101 @@ export function AnnouncementFeed({
                 <BellPlus className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                 <span>{savingSearch ? 'Kaydediliyor...' : 'Bu Aramayı Alarm Yap'}</span>
               </button>
+            </div>
+          </div>
+
+          {/* Criteria Filter Row */}
+          <div
+            aria-label="Başvuru Kriteri Filtreleri"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-200 dark:border-slate-800"
+          >
+            <div className="min-w-0">
+              <label
+                htmlFor="feed-education"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
+              >
+                Öğrenim Düzeyi
+              </label>
+              <select
+                id="feed-education"
+                value={educationLevel}
+                onChange={(e) =>
+                  setEducationLevel(
+                    e.target.value as 'hepsi' | 'lisans' | 'onlisans' | 'ortaogretim'
+                  )
+                }
+                className="w-full min-w-0 min-h-[44px] px-3 py-2 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+              >
+                <option value="hepsi">Tümü</option>
+                <option value="lisans">Lisans</option>
+                <option value="onlisans">Ön Lisans</option>
+                <option value="ortaogretim">Ortaöğretim</option>
+              </select>
+            </div>
+
+            <div className="min-w-0">
+              <label
+                htmlFor="feed-kpss-type"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
+              >
+                KPSS Puan Türü
+              </label>
+              <select
+                id="feed-kpss-type"
+                value={kpssScoreType}
+                onChange={(e) =>
+                  setKpssScoreType(e.target.value as 'hepsi' | 'P3' | 'P93' | 'P94')
+                }
+                className="w-full min-w-0 min-h-[44px] px-3 py-2 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+              >
+                <option value="hepsi">Tümü</option>
+                <option value="P3">P3 (Lisans)</option>
+                <option value="P93">P93 (Ön Lisans)</option>
+                <option value="P94">P94 (Ortaöğretim)</option>
+              </select>
+            </div>
+
+            <div className="min-w-0">
+              <label
+                htmlFor="feed-kpss-score"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
+              >
+                KPSS Puanım
+              </label>
+              <input
+                id="feed-kpss-score"
+                type="number"
+                min={0}
+                max={100}
+                step="0.1"
+                inputMode="decimal"
+                value={kpssScoreInput}
+                onChange={(e) => setKpssScoreInput(e.target.value)}
+                placeholder="Örn. 70"
+                className="w-full min-w-0 min-h-[44px] px-3 py-2 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 tabular-nums"
+              />
+            </div>
+
+            <div className="min-w-0">
+              <label
+                htmlFor="feed-driver-license"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1"
+              >
+                Ehliyet
+              </label>
+              <select
+                id="feed-driver-license"
+                value={driverLicense}
+                onChange={(e) => setDriverLicense(e.target.value)}
+                className="w-full min-w-0 min-h-[44px] px-3 py-2 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+              >
+                <option value="hepsi">Tümü</option>
+                <option value="B">B Sınıfı</option>
+                <option value="C">C Sınıfı</option>
+                <option value="D">D Sınıfı</option>
+                <option value="E">E Sınıfı</option>
+                <option value="A">A Sınıfı</option>
+              </select>
             </div>
           </div>
         </div>
@@ -1573,6 +1710,24 @@ function AnnouncementCard({
           .join(' + ')
       : null;
   const positionsCount = item.positionsCount ?? item.positions?.length ?? 0;
+  const extractedCriteriaTags: string[] = [];
+  if (item.criteria.kpssScoreTypes.length > 0 && item.criteria.minKpssScore !== null) {
+    extractedCriteriaTags.push(
+      `${item.criteria.kpssScoreTypes.join('/')} >= ${item.criteria.minKpssScore}`
+    );
+  } else if (item.criteria.kpssScoreTypes.length > 0) {
+    extractedCriteriaTags.push(`KPSS ${item.criteria.kpssScoreTypes.join('/')}`);
+  } else if (item.criteria.minKpssScore !== null) {
+    extractedCriteriaTags.push(`KPSS >= ${item.criteria.minKpssScore}`);
+  }
+  if (item.criteria.driverLicenses.length > 0) {
+    extractedCriteriaTags.push(`${item.criteria.driverLicenses.join(', ')} Ehliyet`);
+  }
+  if (item.criteria.departments && item.criteria.departments.length > 0) {
+    const firstDept = item.criteria.departments[0];
+    const extraCount = item.criteria.departments.length - 1;
+    extractedCriteriaTags.push(extraCount > 0 ? `${firstDept} (+${extraCount})` : firstDept);
+  }
 
   return (
     <article className="bg-white dark:bg-[#111827] border border-slate-300 dark:border-slate-800 p-4 sm:p-5 space-y-3">
@@ -1678,6 +1833,19 @@ function AnnouncementCard({
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 line-clamp-2">
             {item.summary}
           </p>
+
+          {extractedCriteriaTags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px] font-medium">
+              {extractedCriteriaTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="px-2 py-0.5 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 tabular-nums"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Right Metadata & Quick Actions */}

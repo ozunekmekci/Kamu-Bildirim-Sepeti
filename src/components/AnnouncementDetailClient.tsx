@@ -42,6 +42,12 @@ const EDUCATION_LABELS: Record<'lisans' | 'onlisans' | 'ortaogretim', string> = 
   ortaogretim: 'Ortaöğretim',
 };
 
+const GENDER_LABELS: Record<'kadin' | 'erkek' | 'hepsi', string> = {
+  hepsi: 'Kadın / Erkek',
+  erkek: 'Erkek',
+  kadin: 'Kadın',
+};
+
 const CATEGORY_LABELS = {
   atama: 'Atama',
   personel_alimi: 'Personel Alımı',
@@ -533,6 +539,66 @@ export function AnnouncementDetailClient({ announcement }: AnnouncementDetailCli
                   : 'KPSS Şartı Belirtilmemiş'}
               </strong>
             </div>
+            {detail.criteria.driverLicenses.length > 0 && (
+              <div className="border border-slate-200 dark:border-slate-800 p-3">
+                <span className="text-slate-500 dark:text-slate-400 block mb-1">
+                  Sürücü Belgesi
+                </span>
+                <strong className="text-slate-900 dark:text-slate-100">
+                  {detail.criteria.driverLicenses.map((lic) => `${lic} Sınıfı`).join(', ')}
+                </strong>
+              </div>
+            )}
+            {typeof detail.criteria.maxAge === 'number' && (
+              <div className="border border-slate-200 dark:border-slate-800 p-3">
+                <span className="text-slate-500 dark:text-slate-400 block mb-1">Yaş Sınırı</span>
+                <strong className="text-slate-900 dark:text-slate-100 tabular-nums">
+                  En fazla {detail.criteria.maxAge} yaş
+                </strong>
+              </div>
+            )}
+            {detail.criteria.gender && (
+              <div className="border border-slate-200 dark:border-slate-800 p-3">
+                <span className="text-slate-500 dark:text-slate-400 block mb-1">Cinsiyet</span>
+                <strong className="text-slate-900 dark:text-slate-100">
+                  {GENDER_LABELS[detail.criteria.gender]}
+                </strong>
+              </div>
+            )}
+            {detail.criteria.departments && detail.criteria.departments.length > 0 && (
+              <div className="border border-slate-200 dark:border-slate-800 p-3 sm:col-span-2">
+                <span className="text-slate-500 dark:text-slate-400 block mb-1.5">
+                  Aranan Bölümler
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {detail.criteria.departments.map((dept) => (
+                    <span
+                      key={dept}
+                      className="px-2 py-0.5 font-semibold border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+                    >
+                      {dept}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {detail.criteria.certificates.length > 0 && (
+              <div className="border border-slate-200 dark:border-slate-800 p-3 sm:col-span-2">
+                <span className="text-slate-500 dark:text-slate-400 block mb-1.5">
+                  Sertifika / Belgeler
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {detail.criteria.certificates.map((cert) => (
+                    <span
+                      key={cert}
+                      className="px-2 py-0.5 font-semibold border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+                    >
+                      {cert}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {detail.criteria.qualificationCodes.length > 0 && (
               <div className="border border-slate-200 dark:border-slate-800 p-3 sm:col-span-2">
                 <span className="text-slate-500 dark:text-slate-400 block mb-1.5">
@@ -551,6 +617,21 @@ export function AnnouncementDetailClient({ announcement }: AnnouncementDetailCli
               </div>
             )}
           </div>
+
+          {detail.criteria.extractedTextExcerpt &&
+            detail.criteria.extractedTextExcerpt.trim().length > 0 && (
+              <details className="border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+                <summary className="min-h-[44px] px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 cursor-pointer flex items-center justify-between gap-2 select-none">
+                  <span>Resmî İlan PDF Metninden Çıkarılan Şartlar</span>
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                    Aç / Kapat
+                  </span>
+                </summary>
+                <div className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111827] p-3.5 text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words leading-relaxed">
+                  {detail.criteria.extractedTextExcerpt}
+                </div>
+              </details>
+            )}
         </section>
 
         {/* Profile Match Breakdown */}

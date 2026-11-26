@@ -1,4 +1,5 @@
 import type { Announcement } from '@/modules/announcements/types';
+import { matchesSavedSearchFilters } from '@/modules/announcements/service';
 import { getUserBillingState } from '@/modules/billing';
 import type { DatabaseAdapter, PushSubscriptionRecord } from '@/modules/db/types';
 import { generateId } from '@/modules/identity/crypto';
@@ -356,9 +357,6 @@ export async function dispatchPushForNewAnnouncements(
 
   for (const { user, prefs } of usersWithPrefs) {
     processedUsers += 1;
-    if (!prefs.instantNewAnnouncements) {
-      continue;
-    }
 
     const { entitlements } = await getUserBillingState(db, user.id);
     if (!entitlements.canInstantAlert) {
@@ -370,42 +368,82 @@ export async function dispatchPushForNewAnnouncements(
       continue;
     }
 
-    const profile = prefs.onlyMatchingProfile ? await db.getProfile(user.id) : null;
+    if (prefs.instantNewAnnouncements) {
+      const profile = prefs.onlyMatchingProfile ? await db.getProfile(user.id) : null;
 
-    for (const announcement of newAnnouncements) {
-      if (announcement.status !== 'acik') continue;
+      for (const announcement of newAnnouncements) {
+        if (announcement.status !== 'acik') continue;
 
-      if (prefs.onlyMatchingProfile && profile) {
-        const match = evaluateAnnouncementMatch(profile, announcement);
-        if (!match.eligible) continue;
+        if (prefs.onlyMatchingProfile && profile) {
+          const match = evaluateAnnouncementMatch(profile, announcement);
+          if (!match.eligible) continue;
+        }
+
+        const reminderType = 'push_new_announcement';
+        const alreadySent = await db.hasReminderLog(user.id, announcement.id, reminderType);
+        if (alreadySent) continue;
+
+        const dispatchRes = await dispatchPushNotification(
+          db,
+          user.id,
+          {
+            title: 'Kamu Bildirim Sepeti: Yeni İlan',
+            body: `${announcement.institution} - ${announcement.title}`,
+            url: `/ilan/${announcement.id}`,
+          },
+          adapter,
+        );
+
+        prunedCount += dispatchRes.pruned ?? 0;
+
+        if (dispatchRes.delivered > 0) {
+          await db.recordReminderLog({
+            id: generateId(),
+            userId: user.id,
+            announcementId: announcement.id,
+            reminderType,
+            sentAt: referenceDate.toISOString(),
+          });
+          sentCount += dispatchRes.delivered;
+        }
       }
+    }
 
-      const reminderType = 'push_new_announcement';
-      const alreadySent = await db.hasReminderLog(user.id, announcement.id, reminderType);
-      if (alreadySent) continue;
+    const savedSearches = (await db.listSavedSearches(user.id)).filter(
+      (search) => search.notifyPush,
+    );
+    for (const search of savedSearches) {
+      for (const announcement of newAnnouncements) {
+        if (announcement.status !== 'acik') continue;
+        if (!matchesSavedSearchFilters(announcement, search.filters)) continue;
 
-      const dispatchRes = await dispatchPushNotification(
-        db,
-        user.id,
-        {
-          title: 'Kamu Bildirim Sepeti: Yeni İlan',
-          body: `${announcement.institution} - ${announcement.title}`,
-          url: `/ilan/${announcement.id}`,
-        },
-        adapter,
-      );
+        const reminderType = `push_saved_search:${search.id}`;
+        const alreadySent = await db.hasReminderLog(user.id, announcement.id, reminderType);
+        if (alreadySent) continue;
 
-      prunedCount += dispatchRes.pruned ?? 0;
+        const dispatchRes = await dispatchPushNotification(
+          db,
+          user.id,
+          {
+            title: `Kamu Bildirim Sepeti: ${search.name}`,
+            body: `${announcement.institution} - ${announcement.title}`,
+            url: `/ilan/${announcement.id}`,
+          },
+          adapter,
+        );
 
-      if (dispatchRes.delivered > 0) {
-        await db.recordReminderLog({
-          id: generateId(),
-          userId: user.id,
-          announcementId: announcement.id,
-          reminderType,
-          sentAt: referenceDate.toISOString(),
-        });
-        sentCount += dispatchRes.delivered;
+        prunedCount += dispatchRes.pruned ?? 0;
+
+        if (dispatchRes.delivered > 0) {
+          await db.recordReminderLog({
+            id: generateId(),
+            userId: user.id,
+            announcementId: announcement.id,
+            reminderType,
+            sentAt: referenceDate.toISOString(),
+          });
+          sentCount += dispatchRes.delivered;
+        }
       }
     }
   }

@@ -1,5 +1,6 @@
 import type { Announcement } from '@/modules/announcements/types';
 import { getDeadlineDaysLeft } from '@/modules/announcements';
+import { matchesSavedSearchFilters } from '@/modules/announcements/service';
 import {
   canSaveAnotherAnnouncement,
   getUserBillingState,
@@ -245,7 +246,7 @@ export async function dispatchNewAnnouncementAlerts(
 
   for (const { user, prefs } of usersWithPrefs) {
     processedUsers += 1;
-    if (!prefs.emailEnabled || !prefs.instantNewAnnouncements) {
+    if (!prefs.emailEnabled) {
       continue;
     }
 
@@ -254,35 +255,68 @@ export async function dispatchNewAnnouncementAlerts(
       continue;
     }
 
-    const profile = prefs.onlyMatchingProfile ? await db.getProfile(user.id) : null;
+    if (prefs.instantNewAnnouncements) {
+      const profile = prefs.onlyMatchingProfile ? await db.getProfile(user.id) : null;
 
-    for (const announcement of newAnnouncements) {
-      if (announcement.status !== 'acik') continue;
+      for (const announcement of newAnnouncements) {
+        if (announcement.status !== 'acik') continue;
 
-      if (prefs.onlyMatchingProfile && profile) {
-        const match = evaluateAnnouncementMatch(profile, announcement);
-        if (!match.eligible) continue;
-      }
+        if (prefs.onlyMatchingProfile && profile) {
+          const match = evaluateAnnouncementMatch(profile, announcement);
+          if (!match.eligible) continue;
+        }
 
-      const reminderType = 'new_announcement';
-      const alreadySent = await db.hasReminderLog(user.id, announcement.id, reminderType);
-      if (alreadySent) continue;
+        const reminderType = 'new_announcement';
+        const alreadySent = await db.hasReminderLog(user.id, announcement.id, reminderType);
+        if (alreadySent) continue;
 
-      const result = await emailAdapter.sendEmail({
-        to: user.email,
-        subject: `Kamu Bildirim Sepeti: Yeni ilan - ${announcement.title}`,
-        text: `${announcement.institution} tarafından "${announcement.title}" ilanı yayımlandı. Son başvuru tarihi: ${announcement.deadlineAt}. Resmî kaynak: ${announcement.sourceUrl}`,
-      });
-
-      if (result.delivered || emailAdapter.providerName === 'noop') {
-        await db.recordReminderLog({
-          id: generateId(),
-          userId: user.id,
-          announcementId: announcement.id,
-          reminderType,
-          sentAt: referenceDate.toISOString(),
+        const result = await emailAdapter.sendEmail({
+          to: user.email,
+          subject: `Kamu Bildirim Sepeti: Yeni ilan - ${announcement.title}`,
+          text: `${announcement.institution} tarafından "${announcement.title}" ilanı yayımlandı. Son başvuru tarihi: ${announcement.deadlineAt}. Resmî kaynak: ${announcement.sourceUrl}`,
         });
-        sentCount += 1;
+
+        if (result.delivered || emailAdapter.providerName === 'noop') {
+          await db.recordReminderLog({
+            id: generateId(),
+            userId: user.id,
+            announcementId: announcement.id,
+            reminderType,
+            sentAt: referenceDate.toISOString(),
+          });
+          sentCount += 1;
+        }
+      }
+    }
+
+    const savedSearches = (await db.listSavedSearches(user.id)).filter(
+      (search) => search.notifyEmail,
+    );
+    for (const search of savedSearches) {
+      for (const announcement of newAnnouncements) {
+        if (announcement.status !== 'acik') continue;
+        if (!matchesSavedSearchFilters(announcement, search.filters)) continue;
+
+        const reminderType = `saved_search:${search.id}`;
+        const alreadySent = await db.hasReminderLog(user.id, announcement.id, reminderType);
+        if (alreadySent) continue;
+
+        const result = await emailAdapter.sendEmail({
+          to: user.email,
+          subject: `Kamu Bildirim Sepeti: "${search.name}" aramanıza yeni ilan: ${announcement.title}`,
+          text: `"${search.name}" kayıtlı aramanızla eşleşen yeni ilan yayımlandı: ${announcement.institution} - ${announcement.title}. Son başvuru tarihi: ${announcement.deadlineAt}. Resmî kaynak: ${announcement.sourceUrl}`,
+        });
+
+        if (result.delivered || emailAdapter.providerName === 'noop') {
+          await db.recordReminderLog({
+            id: generateId(),
+            userId: user.id,
+            announcementId: announcement.id,
+            reminderType,
+            sentAt: referenceDate.toISOString(),
+          });
+          sentCount += 1;
+        }
       }
     }
   }

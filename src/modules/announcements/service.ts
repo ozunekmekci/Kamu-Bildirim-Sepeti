@@ -1,5 +1,5 @@
 import { normalizeTrSearch } from '@/lib/turkish';
-import type { DatabaseAdapter } from '@/modules/db/types';
+import type { DatabaseAdapter, SavedSearchFilters } from '@/modules/db/types';
 import { enrichKariyerKapisiDetail, fetchAllOfficialSourcesV2 } from './connectors';
 import { fetchOfficialAnnouncements } from './parsers';
 import {
@@ -9,7 +9,10 @@ import {
   AnnouncementFilter,
   AnnouncementSource,
   AnnouncementStatus,
+  EmploymentType,
+  ExamType,
   FetchErrorItem,
+  NoticeType,
   SourceCheckpoint,
   SyncOfficialResult,
 } from './types';
@@ -43,9 +46,32 @@ export function filterAnnouncements(
   items: Announcement[],
   filter: AnnouncementFilter = {},
 ): Announcement[] {
-  const { status, category, source, employmentType, examType, noticeType, city, q } = filter;
+  const {
+    status,
+    category,
+    source,
+    employmentType,
+    examType,
+    noticeType,
+    city,
+    q,
+    educationLevel,
+    kpssScoreType,
+    maxKpssScore,
+    driverLicense,
+    department,
+  } = filter;
   const normCity = city ? normalizeTrSearch(city) : '';
   const normQuery = q ? normalizeTrSearch(q) : '';
+  const normLicenseRaw = driverLicense ? driverLicense.trim() : '';
+  const normLicenseSearch = normLicenseRaw ? normalizeTrSearch(normLicenseRaw) : '';
+  const targetLicense =
+    normLicenseRaw && normLicenseSearch !== 'hepsi' && normLicenseSearch !== 'tumu'
+      ? normLicenseRaw.toUpperCase()
+      : '';
+  const normDepartment = department ? normalizeTrSearch(department) : '';
+  const hasMaxKpssScore =
+    typeof maxKpssScore === 'number' && Number.isFinite(maxKpssScore);
 
   return items.filter((item) => {
     if (status && status !== 'hepsi' && item.status !== status) {
@@ -90,6 +116,60 @@ export function filterAnnouncements(
         return false;
       }
     }
+    if (educationLevel && educationLevel !== 'hepsi') {
+      const criteriaEduMatch = item.criteria.educationLevels.includes(educationLevel);
+      const positionEduMatch = (item.positions ?? []).some(
+        (pos) => pos.educationLevel === educationLevel,
+      );
+      if (!criteriaEduMatch && !positionEduMatch) {
+        return false;
+      }
+    }
+    if (kpssScoreType && kpssScoreType !== 'hepsi') {
+      const criteriaTypeMatch = item.criteria.kpssScoreTypes.includes(kpssScoreType);
+      const positionTypeMatch = (item.positions ?? []).some(
+        (pos) => pos.kpssScoreType === kpssScoreType,
+      );
+      if (!criteriaTypeMatch && !positionTypeMatch) {
+        return false;
+      }
+    }
+    if (hasMaxKpssScore) {
+      const criteriaScoreOk =
+        item.criteria.minKpssScore === null || item.criteria.minKpssScore <= maxKpssScore;
+      const positionScoreOk =
+        (item.positions?.length ?? 0) > 0 &&
+        (item.positions ?? []).some(
+          (pos) => pos.minKpssScore === null || pos.minKpssScore <= maxKpssScore,
+        );
+      if (!criteriaScoreOk && !positionScoreOk) {
+        return false;
+      }
+    }
+    if (targetLicense) {
+      const licenseMatch = item.criteria.driverLicenses.some(
+        (lic) => lic.trim().toUpperCase() === targetLicense,
+      );
+      if (!licenseMatch) {
+        return false;
+      }
+    }
+    if (normDepartment && normDepartment !== 'hepsi' && normDepartment !== 'tumu') {
+      const departmentHaystack = normalizeTrSearch(
+        [
+          ...(item.criteria.departments ?? []),
+          ...item.criteria.qualificationCodes,
+          item.title,
+          item.summary,
+          ...item.criteria.summaryLines,
+          item.criteria.extractedTextExcerpt ?? '',
+          ...(item.positions ?? []).map((pos) => pos.requirementsSummary),
+        ].join(' '),
+      );
+      if (!departmentHaystack.includes(normDepartment)) {
+        return false;
+      }
+    }
     if (normQuery) {
       const searchable = normalizeTrSearch(
         [
@@ -103,11 +183,15 @@ export function filterAnnouncements(
           ...item.criteria.summaryLines,
           ...item.criteria.qualificationCodes,
           ...item.criteria.certificates,
+          ...(item.criteria.departments ?? []),
+          ...item.criteria.driverLicenses,
+          item.criteria.extractedTextExcerpt ?? '',
           ...(item.positions ?? []).flatMap((pos) => [
             pos.title,
             pos.unvan ?? '',
             pos.city,
             pos.district ?? '',
+            pos.requirementsSummary,
           ]),
         ].join(' '),
       );
@@ -120,6 +204,117 @@ export function filterAnnouncements(
     }
     return true;
   });
+}
+
+const SAVED_VALID_STATUSES = new Set(['acik', 'kapali', 'hepsi']);
+const SAVED_VALID_CATEGORIES = new Set(['atama', 'personel_alimi', 'gorevlendirme', 'hepsi']);
+const SAVED_VALID_SOURCES = new Set([
+  'kariyer_kapisi',
+  'sbb',
+  'iskur',
+  'resmi_gazete',
+  'osym_kpss',
+  'hepsi',
+]);
+const SAVED_VALID_EMPLOYMENT_TYPES = new Set([
+  'memur_a',
+  'memur_b',
+  'sozlesmeli_4b',
+  'akademik',
+  'isci',
+  'askeri_guvenlik',
+  'gorevde_yukselme',
+  'diger',
+  'hepsi',
+]);
+const SAVED_VALID_EXAM_TYPES = new Set([
+  'kpss_only',
+  'oral_exam',
+  'written_and_oral',
+  'practice_exam',
+  'unspecified',
+  'hepsi',
+]);
+const SAVED_VALID_NOTICE_TYPES = new Set(['ilan', 'duzeltme', 'iptal', 'sonuc', 'hepsi']);
+const SAVED_VALID_EDUCATION_LEVELS = new Set(['lisans', 'onlisans', 'ortaogretim', 'hepsi']);
+const SAVED_VALID_KPSS_TYPES = new Set(['P3', 'P93', 'P94', 'hepsi']);
+
+export function savedSearchFiltersToAnnouncementFilter(
+  filters: SavedSearchFilters,
+): AnnouncementFilter {
+  const result: AnnouncementFilter = {};
+
+  if (filters.status && SAVED_VALID_STATUSES.has(filters.status)) {
+    result.status = filters.status as AnnouncementStatus | 'hepsi';
+  }
+  if (filters.category && SAVED_VALID_CATEGORIES.has(filters.category)) {
+    result.category = filters.category as AnnouncementCategory | 'hepsi';
+  }
+  if (filters.source && SAVED_VALID_SOURCES.has(filters.source)) {
+    result.source = filters.source as AnnouncementSource | 'hepsi';
+  }
+  if (
+    filters.employmentType &&
+    filters.employmentType !== 'memur_ab' &&
+    SAVED_VALID_EMPLOYMENT_TYPES.has(filters.employmentType)
+  ) {
+    result.employmentType = filters.employmentType as EmploymentType | 'hepsi';
+  }
+  if (filters.examType && SAVED_VALID_EXAM_TYPES.has(filters.examType)) {
+    result.examType = filters.examType as ExamType | 'hepsi';
+  }
+  if (filters.noticeType && SAVED_VALID_NOTICE_TYPES.has(filters.noticeType)) {
+    result.noticeType = filters.noticeType as NoticeType | 'hepsi';
+  }
+  if (filters.city?.trim()) {
+    result.city = filters.city.trim();
+  }
+  if (filters.q?.trim()) {
+    result.q = filters.q.trim();
+  }
+  if (filters.educationLevel && SAVED_VALID_EDUCATION_LEVELS.has(filters.educationLevel)) {
+    result.educationLevel = filters.educationLevel as
+      | 'lisans'
+      | 'onlisans'
+      | 'ortaogretim'
+      | 'hepsi';
+  }
+  if (filters.kpssScoreType) {
+    const normalizedKpss =
+      filters.kpssScoreType.trim().toLowerCase() === 'hepsi'
+        ? 'hepsi'
+        : filters.kpssScoreType.trim().toUpperCase();
+    if (SAVED_VALID_KPSS_TYPES.has(normalizedKpss)) {
+      result.kpssScoreType = normalizedKpss as 'P3' | 'P93' | 'P94' | 'hepsi';
+    }
+  }
+  if (filters.maxKpssScore !== undefined && filters.maxKpssScore.trim() !== '') {
+    const parsedScore = Number(filters.maxKpssScore.trim().replace(',', '.'));
+    if (Number.isFinite(parsedScore) && parsedScore >= 0 && parsedScore <= 100) {
+      result.maxKpssScore = parsedScore;
+    }
+  }
+  if (filters.driverLicense?.trim()) {
+    result.driverLicense = filters.driverLicense.trim();
+  }
+  if (filters.department?.trim()) {
+    result.department = filters.department.trim();
+  }
+
+  return result;
+}
+
+export function matchesSavedSearchFilters(
+  announcement: Announcement,
+  filters: SavedSearchFilters,
+): boolean {
+  if (filters.employmentType === 'memur_ab') {
+    if (announcement.employmentType !== 'memur_a' && announcement.employmentType !== 'memur_b') {
+      return false;
+    }
+  }
+  const announcementFilter = savedSearchFiltersToAnnouncementFilter(filters);
+  return filterAnnouncements([announcement], announcementFilter).length === 1;
 }
 
 export function getAnnouncementFacets(items: Announcement[]): AnnouncementFacets {

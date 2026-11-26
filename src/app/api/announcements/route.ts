@@ -46,6 +46,8 @@ const VALID_EXAM_TYPES = new Set([
   'hepsi',
 ]);
 const VALID_NOTICE_TYPES = new Set(['ilan', 'duzeltme', 'iptal', 'sonuc', 'hepsi']);
+const VALID_EDUCATION_LEVELS = new Set(['lisans', 'onlisans', 'ortaogretim', 'hepsi']);
+const VALID_KPSS_SCORE_TYPES = new Set(['P3', 'P93', 'P94', 'hepsi']);
 
 function buildCategoryCounts(items: Announcement[]) {
   const employmentTypes: Record<EmploymentType, number> = {
@@ -99,6 +101,30 @@ export async function GET(request: Request) {
   const rawNoticeType = url.searchParams.get('noticeType') ?? undefined;
   const city = url.searchParams.get('city') ?? undefined;
   const q = url.searchParams.get('q') ?? undefined;
+  const rawEducationLevel = url.searchParams.get('educationLevel') ?? undefined;
+  const rawKpssScoreType = url.searchParams.get('kpssScoreType') ?? undefined;
+  const rawMaxKpssScore = url.searchParams.get('maxKpssScore') ?? undefined;
+  const rawDriverLicense = url.searchParams.get('driverLicense') ?? undefined;
+  const rawDepartment = url.searchParams.get('department') ?? undefined;
+
+  const normalizedKpssScoreType = rawKpssScoreType
+    ? rawKpssScoreType.trim().toLowerCase() === 'hepsi'
+      ? 'hepsi'
+      : rawKpssScoreType.trim().toUpperCase()
+    : undefined;
+  const parsedMaxKpssScore =
+    rawMaxKpssScore && rawMaxKpssScore.trim() !== ''
+      ? Number(rawMaxKpssScore.trim().replace(',', '.'))
+      : undefined;
+  const validMaxKpssScore =
+    parsedMaxKpssScore !== undefined &&
+    Number.isFinite(parsedMaxKpssScore) &&
+    parsedMaxKpssScore >= 0 &&
+    parsedMaxKpssScore <= 100
+      ? parsedMaxKpssScore
+      : undefined;
+  const cleanedDriverLicense = rawDriverLicense?.trim().slice(0, 16) || undefined;
+  const cleanedDepartment = rawDepartment?.trim().slice(0, 120) || undefined;
 
   const filter: AnnouncementFilter = {
     status:
@@ -127,6 +153,20 @@ export async function GET(request: Request) {
         : undefined,
     city: city || undefined,
     q: q || undefined,
+    educationLevel:
+      rawEducationLevel && VALID_EDUCATION_LEVELS.has(rawEducationLevel)
+        ? (rawEducationLevel as 'lisans' | 'onlisans' | 'ortaogretim' | 'hepsi')
+        : undefined,
+    kpssScoreType:
+      normalizedKpssScoreType && VALID_KPSS_SCORE_TYPES.has(normalizedKpssScoreType)
+        ? (normalizedKpssScoreType as 'P3' | 'P93' | 'P94' | 'hepsi')
+        : undefined,
+    maxKpssScore: validMaxKpssScore,
+    driverLicense:
+      cleanedDriverLicense && cleanedDriverLicense.toLowerCase() !== 'hepsi'
+        ? cleanedDriverLicense
+        : undefined,
+    department: cleanedDepartment,
   };
 
   const db = await getDb();
