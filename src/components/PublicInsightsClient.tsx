@@ -102,6 +102,7 @@ export function PublicInsightsClient({
   const cityCatalog = propCityCatalog ?? getCitySeoCatalog();
 
   const [checkpoints, setCheckpoints] = useState<SourceCheckpoint[]>([]);
+  const [liveSummary, setLiveSummary] = useState<{ openCount: number; totalCount: number } | null>(null);
   const [syncLoading, setSyncLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncFetchedAtMs, setSyncFetchedAtMs] = useState<number>(() => Date.now());
@@ -118,10 +119,20 @@ export function PublicInsightsClient({
         }
         const data = (await res.json()) as {
           checkpoints?: SourceCheckpoint[];
+          liveSummary?: { openCount?: number; totalCount?: number };
         };
         if (!active) return;
         setSyncFetchedAtMs(Date.now());
         setCheckpoints(Array.isArray(data.checkpoints) ? data.checkpoints : []);
+        if (
+          typeof data.liveSummary?.openCount === 'number' &&
+          typeof data.liveSummary?.totalCount === 'number'
+        ) {
+          setLiveSummary({
+            openCount: data.liveSummary.openCount,
+            totalCount: data.liveSummary.totalCount,
+          });
+        }
       })
       .catch(() => {
         if (active) {
@@ -185,10 +196,10 @@ export function PublicInsightsClient({
             Aktif Açık İlan
           </div>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-            {summary.totalOpenAnnouncements.toLocaleString('tr-TR')}
+            {(liveSummary ? liveSummary.openCount : summary.totalOpenAnnouncements).toLocaleString('tr-TR')}
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-            Toplam {summary.totalAllAnnouncements.toLocaleString('tr-TR')} kayıtlı ilan içinde
+            Toplam {(liveSummary ? liveSummary.totalCount : summary.totalAllAnnouncements).toLocaleString('tr-TR')} kayıtlı ilan içinde
           </div>
         </div>
 

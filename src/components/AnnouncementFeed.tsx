@@ -180,6 +180,17 @@ export function AnnouncementFeed({
   const [limitApplied, setLimitApplied] = useState<number | null>(null);
   const [totalAvailable, setTotalAvailable] = useState<number>(initialAnnouncements.length);
   const [freshness, setFreshness] = useState<FeedFreshness | null>(null);
+  const [serverFacetsCities, setServerFacetsCities] = useState<string[] | null>(null);
+  const [serverStatusTotals, setServerStatusTotals] = useState<{
+    acik: number;
+    kapali: number;
+  } | null>(null);
+  const [serverCategoryCounts, setServerCategoryCounts] = useState<{
+    employmentTypes?: Record<string, number>;
+    examTypes?: Record<string, number>;
+  } | null>(null);
+  const didInitFilterSyncRef = useRef(false);
+  const didApplyServerFilterRef = useRef(false);
 
   const [user, setUser] = useState<AuthUserSummary | null>(initialUser);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
@@ -233,6 +244,13 @@ export function AnnouncementFeed({
         limited?: boolean;
         limit?: number | null;
         limitApplied?: number | null;
+        openTotal?: number;
+        closedTotal?: number;
+        facets?: { cities?: string[] };
+        categoryCounts?: {
+          employmentTypes?: Record<string, number>;
+          examTypes?: Record<string, number>;
+        };
         freshness?: FeedFreshness | null;
       } | null,
       meData: { user?: AuthUserSummary | null } | null,
@@ -258,6 +276,18 @@ export function AnnouncementFeed({
               ? annData.freshness.checkpoints
               : [],
           });
+        }
+        if (Array.isArray(annData.facets?.cities) && annData.facets.cities.length > 0) {
+          setServerFacetsCities(annData.facets.cities);
+        }
+        if (
+          typeof annData.openTotal === 'number' &&
+          typeof annData.closedTotal === 'number'
+        ) {
+          setServerStatusTotals({ acik: annData.openTotal, kapali: annData.closedTotal });
+        }
+        if (annData.categoryCounts) {
+          setServerCategoryCounts(annData.categoryCounts);
         }
       }
       if (meData) {
@@ -463,6 +493,9 @@ export function AnnouncementFeed({
   }, [drawerItem]);
 
   const facets = useMemo(() => getAnnouncementFacets(announcements), [announcements]);
+  const cityOptions = serverFacetsCities ?? facets.cities;
+  const openTabCount = serverStatusTotals?.acik ?? facets.statuses.acik;
+  const closedTabCount = serverStatusTotals?.kapali ?? facets.statuses.kapali;
 
   const statusScopedAnnouncements = useMemo(() => {
     if (activeTab === 'matched') {
@@ -472,6 +505,20 @@ export function AnnouncementFeed({
   }, [announcements, activeTab, matchedItems]);
 
   const taxonomyCounts = useMemo(() => {
+    if (activeTab !== 'matched' && serverCategoryCounts?.employmentTypes) {
+      const emp = serverCategoryCounts.employmentTypes;
+      const ex = serverCategoryCounts.examTypes ?? {};
+      return {
+        hepsi: activeTab === 'acik' ? openTabCount : closedTabCount,
+        memur_ab: (emp.memur_a ?? 0) + (emp.memur_b ?? 0),
+        sozlesmeli_4b: emp.sozlesmeli_4b ?? 0,
+        akademik: emp.akademik ?? 0,
+        isci: emp.isci ?? 0,
+        askeri_guvenlik: emp.askeri_guvenlik ?? 0,
+        kpssOnly: ex.kpss_only ?? 0,
+      };
+    }
+
     const counts: Record<TaxonomyTabKey, number> & { kpssOnly: number } = {
       hepsi: statusScopedAnnouncements.length,
       memur_ab: 0,
@@ -500,7 +547,7 @@ export function AnnouncementFeed({
     }
 
     return counts;
-  }, [statusScopedAnnouncements]);
+  }, [statusScopedAnnouncements, activeTab, serverCategoryCounts, openTabCount, closedTabCount]);
 
   const parsedMaxKpssScore = useMemo(() => {
     const trimmed = kpssScoreInput.trim();
@@ -509,6 +556,110 @@ export function AnnouncementFeed({
     if (!Number.isFinite(val) || val < 0 || val > 100) return undefined;
     return val;
   }, [kpssScoreInput]);
+
+  useEffect(() => {
+    if (!didInitFilterSyncRef.current) {
+      didInitFilterSyncRef.current = true;
+      return;
+    }
+    if (limitApplied === null || activeTab === 'matched') {
+      return;
+    }
+
+    const trimmedQuery = query.trim();
+    const hasFilter =
+      activeTab !== 'acik' ||
+      Boolean(trimmedQuery) ||
+      category !== 'hepsi' ||
+      source !== 'hepsi' ||
+      city !== 'hepsi' ||
+      taxonomyTab !== 'hepsi' ||
+      interviewFreeOnly ||
+      educationLevel !== 'hepsi' ||
+      kpssScoreType !== 'hepsi' ||
+      parsedMaxKpssScore !== undefined ||
+      driverLicense !== 'hepsi';
+
+    if (!hasFilter && !didApplyServerFilterRef.current) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set('status', hasFilter ? activeTab : 'hepsi');
+    if (trimmedQuery) params.set('q', trimmedQuery);
+    if (category !== 'hepsi') params.set('category', category);
+    if (source !== 'hepsi') params.set('source', source);
+    if (city !== 'hepsi') params.set('city', city);
+    if (taxonomyTab !== 'hepsi') params.set('employmentType', taxonomyTab);
+    if (interviewFreeOnly) params.set('examType', 'kpss_only');
+    if (educationLevel !== 'hepsi') params.set('educationLevel', educationLevel);
+    if (kpssScoreType !== 'hepsi') params.set('kpssScoreType', kpssScoreType);
+    if (parsedMaxKpssScore !== undefined) params.set('maxKpssScore', String(parsedMaxKpssScore));
+    if (driverLicense !== 'hepsi') params.set('driverLicense', driverLicense);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      didApplyServerFilterRef.current = hasFilter;
+      fetch(`/api/announcements?${params.toString()}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          if (!res.ok) return null;
+          return (await res.json()) as Parameters<typeof applyFeedResults>[0];
+        })
+        .then((data) => {
+          if (!data || controller.signal.aborted) return;
+          const list = data.items ?? data.announcements ?? [];
+          setAnnouncements(list);
+          setTotalAvailable(data.total ?? list.length);
+          const effectiveLimit =
+            data.limitApplied ?? (data.limited ? data.limit ?? null : null);
+          setLimitApplied(effectiveLimit);
+          if (data.freshness) {
+            setFreshness({
+              lastCheckedAt: data.freshness.lastCheckedAt ?? null,
+              checkpoints: Array.isArray(data.freshness.checkpoints)
+                ? data.freshness.checkpoints
+                : [],
+            });
+          }
+          if (Array.isArray(data.facets?.cities) && data.facets.cities.length > 0) {
+            setServerFacetsCities(data.facets.cities);
+          }
+          if (
+            typeof data.openTotal === 'number' &&
+            typeof data.closedTotal === 'number'
+          ) {
+            setServerStatusTotals({ acik: data.openTotal, kapali: data.closedTotal });
+          }
+          if (data.categoryCounts) {
+            setServerCategoryCounts(data.categoryCounts);
+          }
+        })
+        .catch(() => {
+          // Keep current visible results on transient abort or network error
+        });
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    limitApplied,
+    activeTab,
+    query,
+    category,
+    source,
+    city,
+    taxonomyTab,
+    interviewFreeOnly,
+    educationLevel,
+    kpssScoreType,
+    parsedMaxKpssScore,
+    driverLicense,
+  ]);
 
   const filteredList = useMemo(() => {
     if (activeTab === 'matched') return [];
@@ -849,7 +1000,7 @@ export function AnnouncementFeed({
                 <span
                   key={cp.source}
                   className={`px-2 py-0.5 border font-semibold tabular-nums ${
-                    cp.lastError
+                    cp.lastError && cp.activeCount === 0
                       ? 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
                       : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200'
                   }`}
@@ -879,7 +1030,7 @@ export function AnnouncementFeed({
                     : 'bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
-                Açık İlanlar ({facets.statuses.acik})
+                Açık İlanlar ({openTabCount})
               </button>
               <button
                 type="button"
@@ -892,7 +1043,7 @@ export function AnnouncementFeed({
                     : 'bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
-                Kapalı İlanlar ({facets.statuses.kapali})
+                Kapalı İlanlar ({closedTabCount})
               </button>
               <button
                 type="button"
@@ -1050,7 +1201,7 @@ export function AnnouncementFeed({
                 className="w-full min-h-[44px] px-3 py-2 text-sm border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
               >
                 <option value="hepsi">Tüm Şehirler</option>
-                {facets.cities.map((c) => (
+                {cityOptions.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>

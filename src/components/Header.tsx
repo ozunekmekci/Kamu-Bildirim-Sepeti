@@ -126,7 +126,7 @@ export default function Header({
           <button
             type="button"
             onClick={() => onViewChange('table')}
-            className={`px-3 py-1 text-xs font-semibold flex items-center gap-1.5 border transition-colors ${
+            className={`min-h-[44px] px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 border transition-colors ${
               activeView === 'table'
                 ? 'bg-slate-900 text-white border-slate-900'
                 : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
@@ -138,7 +138,7 @@ export default function Header({
           <button
             type="button"
             onClick={() => onViewChange('analytics')}
-            className={`px-3 py-1 text-xs font-semibold flex items-center gap-1.5 border transition-colors ${
+            className={`min-h-[44px] px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 border transition-colors ${
               activeView === 'analytics'
                 ? 'bg-slate-900 text-white border-slate-900'
                 : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'

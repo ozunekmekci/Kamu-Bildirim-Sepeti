@@ -206,7 +206,7 @@ export default function SearchWorkbench({
             <button
               type="button"
               onClick={() => setSearchMode('department')}
-              className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`min-h-[44px] px-3 py-1.5 flex items-center gap-1.5 transition-colors cursor-pointer ${
                 searchMode === 'department'
                   ? 'bg-red-700 text-white font-bold shadow-2xs'
                   : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
@@ -218,7 +218,7 @@ export default function SearchWorkbench({
             <button
               type="button"
               onClick={() => setSearchMode('code')}
-              className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`min-h-[44px] px-3 py-1.5 flex items-center gap-1.5 transition-colors cursor-pointer ${
                 searchMode === 'code'
                   ? 'bg-red-700 text-white font-bold shadow-2xs'
                   : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
@@ -230,7 +230,7 @@ export default function SearchWorkbench({
             <button
               type="button"
               onClick={() => setSearchMode('score')}
-              className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`min-h-[44px] px-3 py-1.5 flex items-center gap-1.5 transition-colors cursor-pointer ${
                 searchMode === 'score'
                   ? 'bg-red-700 text-white font-bold shadow-2xs'
                   : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
@@ -242,7 +242,7 @@ export default function SearchWorkbench({
             <button
               type="button"
               onClick={() => setSearchMode('direct')}
-              className={`px-3 py-1.5 flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`min-h-[44px] px-3 py-1.5 flex items-center gap-1.5 transition-colors cursor-pointer ${
                 searchMode === 'direct'
                   ? 'bg-red-700 text-white font-bold shadow-2xs'
                   : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'

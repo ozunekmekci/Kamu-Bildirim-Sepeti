@@ -482,7 +482,15 @@ describe('Phase 2 auth & sync API routes', () => {
   it('returns empty and populated runs on GET /api/sync/status', async () => {
     const emptyRes = await syncStatusHandler();
     expect(emptyRes.status).toBe(200);
-    expect(await emptyRes.json()).toEqual({ lastRun: null, runs: [], checkpoints: [] });
+    expect(await emptyRes.json()).toMatchObject({
+      lastRun: null,
+      runs: [],
+      checkpoints: [],
+      liveSummary: expect.objectContaining({
+        openCount: expect.any(Number),
+        totalCount: expect.any(Number),
+      }),
+    });
 
     await db.recordSyncRun({
       id: 'sync-api-1',

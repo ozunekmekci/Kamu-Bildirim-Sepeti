@@ -559,7 +559,7 @@ describe('Kamu Bildirim Sepeti Phase 7 Premium UI Tests', () => {
     });
 
     expect(screen.getByText(/Kaynak Bazlı Tazelik Kontrolleri/i)).toBeInTheDocument();
-    expect(screen.getByText(/SBB Kamu İlan/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/SBB Kamu İlan/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/14 aktif ilan/i)).toBeInTheDocument();
     expect(screen.getByText(/22 aktif ilan/i)).toBeInTheDocument();
 

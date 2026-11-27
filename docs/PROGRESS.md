@@ -1,7 +1,20 @@
 # Kamu Bildirim Sepeti - İlerleme ve Devir Defteri
 
 **Son Güncelleme:** 2026-11-27  
-**Aktif Faz:** SBB/İŞKUR PDF + Türkçe OCR Zenginleştirme, Gelişmiş Kriter Filtreleri ve Kayıtlı Arama Alarmları (Tamamlandı ve Canlıda Doğrulandı)
+**Aktif Faz:** Saha Cilası: Canlı Mobil/Masaüstü UX Taraması, Debounced Sunucu Arama/Filtre ve Uç Durum Temizliği (Tamamlandı ve Canlıda Doğrulandı)
+
+## Saha Cilası: Canlı UX Taraması, Arama/Filtre Hızı ve Uç Durum Temizliği (Tamamlandı)
+- [x] **Canlı SSR Akışı, Debounced Tam D1 Arama ve `memur_ab` Filtre Uyumu (`src/app/page.tsx`, `src/app/api/announcements/route.ts`, `src/components/AnnouncementFeed.tsx`, `src/modules/announcements/{types,service}.ts`):** `HomePage` `force-dynamic` ile ilk 15 canlı D1 kaydını doğrudan SSR içinde sunar (tohum flaşı kaldırıldı); `/api/announcements` `memur_ab` filtresi, havuz geneli `openTotal`/`closedTotal`, `facets.cities` ve `categoryCounts` döner; misafir akışı (`limitApplied=15`) arama/filtre/sıralama değişimlerinde 250ms debounce + `AbortController` ile tüm 160 D1 kaydını sunucudan filtreler.
+- [x] **Canlı Durum / `/analiz` Uyumu ve SBB Çift Parantez Temizliği (`src/app/api/sync/status/route.ts`, `src/components/PublicInsightsClient.tsx`, `src/modules/announcements/connectors.ts`):** `/api/announcements` ve `/api/sync/status` içinde `checkpoints.activeCount` canlı D1 açık ilan sayısına hizalandı ve `liveSummary: { openCount, totalCount }` eklendi; `/analiz` ilk özet kartı canlı `156 / 160` sayılarını gösterir; `AnnouncementFeed` güncellik bandında `activeCount > 0` iken yanıltıcı uyarı rozeti bastırıldı; `parseSbbKamuIlanHtml` tarih özetindeki çift parantez (`((...))`) temizlendi.
+- [x] **Mobil 44px Dokunma Hedefleri, Footer SBB Kaynağı ve Testler (`src/components/{AppShell,Header,SearchWorkbench}.tsx`, `tests/{field-polish.test.tsx,phase2-auth-sync.test.ts,phase7-ui.test.tsx}`):** Footer resmî kaynaklar listesine `SBB Kamu İlan` eklendi ve tüm 4 footer bağlantısı ile `Header` / `SearchWorkbench` düğmeleri `min-h-[44px]` dokunma hedefine getirildi.
+
+## Doğrulama Özeti (Saha Cilası Son Doğrulama)
+- [x] Hijyen taraması (`src/`, `tests/`, `scripts/`, `docs/`, `HANDOFF.md`, `AGENTS.md` satır 10+): **0** yasaklı rakip adı, **0** `\u2014`
+- [x] `npx vitest run --no-file-parallelism`: **42/42 test dosyası, 421/421 test geçti (`44.28s`, `EXIT=0`)**
+- [x] `npm run lint`, `npx tsc --noEmit`, `npm run build` (53 rota), `npm run build:worker`: **EXIT=0**
+- [x] `node scripts/browser-audit.mjs`: **`[AUDIT PASSED]`** (14 rota HTTP 200, 20/20 matriste 0 taşma, 5/5 R-35 etkileşimi geçti)
+- [x] Canlı Workers deploy (`https://kpssportal.ozunekmekci.workers.dev`, Version `ca0b833b-5d7f-4f58-baa0-dde793149a20`): Total Upload `10531.49 KiB` / gzip `2404.11 KiB`, startup `11 ms`
+- [x] Canlı üretim ve mobil `390x844` Chromium doğrulaması: `GET /` HTTP 200 (`158957B`, tohumsuz), `/api/announcements?source=iskur` (`total=36`), `?employmentType=memur_ab` (`total=47`), `/api/sync/status` (`openCount: 156`, `totalCount: 160`, `sbb` `activeCount: 96`), `/`, `/analiz`, `/kpss-arsivi` mobilde `overflow: false`, footer bağlantıları `h: 44`, `0` konsol/sayfa/ağ hatası
 
 ## SBB/İŞKUR PDF + OCR Zenginleştirme, Kriter Filtreleri ve Kayıtlı Arama Alarmları (Tamamlandı)
 - [x] **PDF Kriter Ayrıştırma, Eşleştirme v2.1 ve D1 JSON Alanları (`src/modules/announcements/{types,parsers,pdf-criteria,index}.ts`, `src/modules/matching/engine.ts`, `src/modules/db/{types,d1-adapter,memory-adapter}.ts`, `tests/pdf-criteria-and-matching.test.ts`):** `AnnouncementCriteria` (`departments`, `maxAge`, `gender`, `extractedTextExcerpt`), `AnnouncementFilter` ve `SavedSearchFilters` sıfır SQL migrasyonu ile genişletildi; saf Edge-uyumlu `enrichAnnouncementFromPdfText` eklendi; parantezli/çoklu ehliyet (`(C) sınıfı`), KPSS tablo puanı öncelikli taban puan ayrıştırma (sözlü/uygulamalı 60 barajı yanlış pozitifleri engellendi), OCR sütun gürültüsü temizlemeli bölüm çıkarımı ve pozisyon bazlı ehliyet/sertifika/bölüm eşleştirmesi eklendi.

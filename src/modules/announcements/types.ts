@@ -118,7 +118,7 @@ export interface AnnouncementFilter {
   status?: AnnouncementStatus | 'hepsi';
   category?: AnnouncementCategory | 'hepsi';
   source?: AnnouncementSource | 'hepsi';
-  employmentType?: EmploymentType | 'hepsi';
+  employmentType?: EmploymentType | 'memur_ab' | 'hepsi';
   examType?: ExamType | 'hepsi';
   noticeType?: NoticeType | 'hepsi';
   city?: string;

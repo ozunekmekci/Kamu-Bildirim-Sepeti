@@ -301,7 +301,7 @@ export default function AppShell({ children, initialUser = null }: AppShellProps
                 Kamu Bildirim Sepeti
               </h2>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Kariyer Kapısı, İŞKUR ve Resmî Gazete üzerinden yayımlanan atama, personel alımı ve görevlendirme ilanları ile KPSS merkezi yerleştirme arşivini tek platformda sunar.
+                Kariyer Kapısı, SBB Kamu İlan, İŞKUR ve Resmî Gazete üzerinden yayımlanan atama, personel alımı ve görevlendirme ilanları ile KPSS merkezi yerleştirme arşivini tek platformda sunar.
               </p>
             </div>
 
@@ -309,15 +309,26 @@ export default function AppShell({ children, initialUser = null }: AppShellProps
               <h2 className="font-bold text-sm text-slate-900 dark:text-slate-100 mb-2">
                 Resmî Kaynaklar
               </h2>
-              <ul className="space-y-1.5">
+              <ul className="space-y-0.5">
                 <li>
                   <a
                     href="https://kariyerkapisi.gov.tr"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline"
+                    className="min-h-[44px] inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline"
                   >
                     <span>Kariyer Kapısı Kamu İşe Alım</span>
+                    <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://kamuilan.sbb.gov.tr/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-h-[44px] inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline"
+                  >
+                    <span>SBB Kamu İlan</span>
                     <ExternalLink className="w-3 h-3" aria-hidden="true" />
                   </a>
                 </li>
@@ -326,7 +337,7 @@ export default function AppShell({ children, initialUser = null }: AppShellProps
                     href="https://www.iskur.gov.tr/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline"
+                    className="min-h-[44px] inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline"
                   >
                     <span>Türkiye İş Kurumu (İŞKUR)</span>
                     <ExternalLink className="w-3 h-3" aria-hidden="true" />
@@ -337,7 +348,7 @@ export default function AppShell({ children, initialUser = null }: AppShellProps
                     href="https://www.resmigazete.gov.tr/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline"
+                    className="min-h-[44px] inline-flex items-center gap-1 text-slate-700 dark:text-slate-300 hover:text-[#b91c1c] dark:hover:text-[#ef4444] underline"
                   >
                     <span>T.C. Resmî Gazete</span>
                     <ExternalLink className="w-3 h-3" aria-hidden="true" />

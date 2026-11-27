@@ -841,7 +841,8 @@ export function parseSbbKamuIlanHtml(
 
     const emMatch = rawP2?.match(/<em\b[^>]*>([\s\S]*?)<\/em>/i);
     const h5DateRaw = extractTagContent(innerHtml, 'h5date');
-    const dateRangeRaw = stripTags(emMatch?.[1] ?? h5DateRaw ?? '');
+    const rawDateRange = stripTags(emMatch?.[1] ?? h5DateRaw ?? '');
+    const dateRangeRaw = rawDateRange.replace(/^\(\s*|\s*\)$/g, '').replace(/\s+/g, ' ').trim();
 
     const imgDateHint = innerHtml.match(/#(\d{1,2})\.(\d{1,2})\.(\d{4})/);
     const hintYear = imgDateHint ? Number(imgDateHint[3]) : fallbackYear;

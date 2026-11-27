@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAnnouncementFacets } from '@/modules/announcements';
+import { filterAnnouncements, getAnnouncementFacets } from '@/modules/announcements';
 import type {
   Announcement,
   AnnouncementCategory,
@@ -29,6 +29,7 @@ const VALID_SOURCES = new Set([
 const VALID_EMPLOYMENT_TYPES = new Set([
   'memur_a',
   'memur_b',
+  'memur_ab',
   'sozlesmeli_4b',
   'akademik',
   'isci',
@@ -141,7 +142,7 @@ export async function GET(request: Request) {
         : undefined,
     employmentType:
       rawEmploymentType && VALID_EMPLOYMENT_TYPES.has(rawEmploymentType)
-        ? (rawEmploymentType as EmploymentType | 'hepsi')
+        ? (rawEmploymentType as EmploymentType | 'memur_ab' | 'hepsi')
         : undefined,
     examType:
       rawExamType && VALID_EXAM_TYPES.has(rawExamType)
@@ -175,10 +176,33 @@ export async function GET(request: Request) {
     ? (await getUserBillingState(db, user.id)).entitlements
     : FREE_ENTITLEMENTS;
 
-  const [allItems, checkpoints] = await Promise.all([
-    db.listAnnouncements(filter),
+  const [baseItems, checkpoints] = await Promise.all([
+    db.listAnnouncements({ status: 'hepsi' }),
     db.listSourceCheckpoints(),
   ]);
+
+  const allItems = filterAnnouncements(baseItems, filter);
+  const liveOpenBySource: Record<string, number> = {};
+  let openTotal = 0;
+  let closedTotal = 0;
+  for (const item of baseItems) {
+    if (item.status === 'acik') {
+      openTotal += 1;
+      liveOpenBySource[item.source] = (liveOpenBySource[item.source] ?? 0) + 1;
+    } else {
+      closedTotal += 1;
+    }
+  }
+
+  const alignedCheckpoints = checkpoints.map((cp) => {
+    const liveOpen = liveOpenBySource[cp.source] ?? 0;
+    return liveOpen > 0 ? { ...cp, activeCount: liveOpen } : cp;
+  });
+
+  const statusScoped =
+    filter.status && filter.status !== 'hepsi'
+      ? baseItems.filter((item) => item.status === filter.status)
+      : baseItems;
 
   const limit = entitlements.maxVisibleAnnouncements;
   const visible = limit !== null ? allItems.slice(0, limit) : allItems;
@@ -188,7 +212,7 @@ export async function GET(request: Request) {
   }));
 
   const lastCheckedAt =
-    checkpoints
+    alignedCheckpoints
       .map((cp) => cp.lastCheckedAt)
       .filter(Boolean)
       .sort((a, b) => b.localeCompare(a))[0] ?? null;
@@ -197,14 +221,16 @@ export async function GET(request: Request) {
     {
       items,
       total: allItems.length,
+      openTotal,
+      closedTotal,
       limited: limit !== null && allItems.length > limit,
       limit,
       plan: entitlements.plan,
-      facets: getAnnouncementFacets(allItems),
-      categoryCounts: buildCategoryCounts(allItems),
+      facets: getAnnouncementFacets(baseItems),
+      categoryCounts: buildCategoryCounts(statusScoped),
       freshness: {
         lastCheckedAt,
-        checkpoints,
+        checkpoints: alignedCheckpoints,
       },
     },
     { status: 200 },

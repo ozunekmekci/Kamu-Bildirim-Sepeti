@@ -83,12 +83,15 @@ export function filterAnnouncements(
     if (source && source !== 'hepsi' && item.source !== source) {
       return false;
     }
-    if (
-      employmentType &&
-      employmentType !== 'hepsi' &&
-      (item.employmentType ?? 'diger') !== employmentType
-    ) {
-      return false;
+    if (employmentType && employmentType !== 'hepsi') {
+      const emp = item.employmentType ?? 'diger';
+      if (employmentType === 'memur_ab') {
+        if (emp !== 'memur_a' && emp !== 'memur_b') {
+          return false;
+        }
+      } else if (emp !== employmentType) {
+        return false;
+      }
     }
     if (
       examType &&
